@@ -2,15 +2,14 @@
 #include <FS.h>
 #include <SPIFFS.h>
 #include "setupesp.h"
+#include "globals.h"
+
+bool PIN::changed_flags{ false };
+bool PIN::changed_script{ false };
 
 PIN::PIN(unsigned int pin) {
-
-
-  if (pin == 22 || pin == 23 || pin == 16 || pin == 17) {
-    pinNumber = pin;
-    load();
-  }
-  script_time.push_back({39600000, 83000000});
+  pinNumber = pin;
+  load();
 }
 void PIN::load() {
   Serial.println("[INF] Загружаем данные для PIN");
@@ -33,16 +32,13 @@ void PIN::load() {
   }
   // читаем user_on
   if (file.available() >= sizeof(user_on)) {
-    file.read((uint8_t *)&user_on, sizeof(user_on));
+    file.read((uint8_t *)&pin_type, sizeof(pin_type));
   }
   // читаем user_off
   if (file.available() >= sizeof(user_off)) {
-    file.read((uint8_t *)&user_off, sizeof(user_off));
+    file.read((uint8_t *)&pin_info, sizeof(pin_info));
   }
-  // читаем script
-  if (file.available() >= sizeof(script)) {
-    file.read((uint8_t *)&script, sizeof(script));
-  }
+
   while (file.available() >= sizeof(unsigned long long) * 2) {
     unsigned long long first{}, second{};
     file.read((uint8_t *)&first, sizeof(first));
@@ -52,17 +48,15 @@ void PIN::load() {
 
   file.close();
 }
-void PIN::save() {
+void PIN::save() const {
   Serial.println("[INF] Сохранение данных для PIN");
   String path = "/pin" + String(pinNumber);
   File file = SPIFFS.open(path, "w");  // открываем на запись (создаст новый или перезапишет)
   if (!file) return;
   file.write((const uint8_t *)&pinNumber, sizeof(pinNumber));
+  file.write((const uint8_t *)&pin_type, sizeof(pin_type));
+  file.write((const uint8_t *)&pin_info, sizeof(pin_info));
 
-  // записываем bools
-  file.write((const uint8_t *)&user_on, sizeof(user_on));
-  file.write((const uint8_t *)&user_off, sizeof(user_off));
-  file.write((const uint8_t *)&script, sizeof(script));
 
   // записываем пары
   for (const auto &p : script_time) {
@@ -74,6 +68,8 @@ void PIN::save() {
 
 void PIN::push_script_time(std::pair<unsigned long long, unsigned long long> &time) {
   script_time.push_back(time);
+  PIN::changed_script = true;
+  PIN::changed_flags = true;
 }
 
 bool PIN::clear_script_time(unsigned long long &time) {
@@ -81,6 +77,8 @@ bool PIN::clear_script_time(unsigned long long &time) {
   for (int i{}; i < size; ++i) {
     if (script_time[i].second == time) {
       script_time.erase(script_time.begin() + i);  // удалить элемент
+      PIN::changed_script = true;
+      PIN::changed_flags = true;
       return true;
     }
   }
@@ -89,17 +87,30 @@ bool PIN::clear_script_time(unsigned long long &time) {
 
 bool PIN::isPinActivation(const unsigned long long &time) {
 
-  if (user_on) {
-    return true;
-  }
-  if (user_off) {
+
+  unsigned long time_now = millis();
+  if (time_now - time_delay < time_interval) {
     return false;
   }
-  if (script) {
+
+  bool on = pin_info & FLAG_USER_ON;    // бит USER_ON
+  if (on) return true;                  // если включён вручную — сразу true
+  bool off = pin_info & FLAG_USER_OFF;  // бит USER_OFF
+  if (off) return false;                // если выключен вручную — сразу false
+
+  bool scr = pin_info & FLAG_SCRIPT;  // бит SCRIPT (сценарий активен)
+
+  if (time_now - pir_sensor_time_on < time_off_)  // ещё не прошло время отключения
+  {
+    return true;
+  }
+
+  if (scr) {  // проверка сценариев
     for (auto &it : script_time) {
       if (it.second < time) {
         it.first += one_day;
         it.second += one_day;
+        changed_script = true;
       }
       if (it.first <= time && time <= it.second) {
         return true;
@@ -109,25 +120,11 @@ bool PIN::isPinActivation(const unsigned long long &time) {
   return false;
 }
 
-String PIN::get_status_pin() {
+String PIN::get_full_status_pin() const {
   String body = Skeleton::commands[pinNumber];
-  if (status_pin) {
-    body += Skeleton::commands[Skeleton::on];
-  } else {
-    body += Skeleton::commands[Skeleton::off];
-  }
-  if (user_on) {
-    body += Skeleton::commands[Skeleton::user_on];
-  }
+  body += (char)pin_type;  // добавляем сырой байт, символ 'A'
+  body += (char)pin_info;  // добавляем байт флагов
 
-  if (user_off) {
-    body += Skeleton::commands[Skeleton::user_off];
-  }
-  if (script) {
-    body += Skeleton::commands[Skeleton::script_on];
-  } else {
-    body += Skeleton::commands[Skeleton::script_off];
-  }
   //Serial.print("script_time.size() ");
   //Serial.println(script_time.size());
   for (int i{}; i < script_time.size(); ++i) {
@@ -143,31 +140,76 @@ String PIN::get_status_pin() {
   Serial.println(body);*/
   return body;
 }
+String PIN::get_status_pin() const {
+  String body = Skeleton::commands[pinNumber];
+  body += (char)pin_info;
+  // Serial.print("[INF] Статус PIN ");
+  // Serial.println(pin_info);
+  return body;
+}
 
-void PIN::set_status_user(int user) {
-  if (user == 1) {
-    user_on = true;
-    user_off = false;
-    script = false;
-  }
-  if (user == 2) {
-    user_off = true;
-    user_on = false;
-    script = false;
-  }
-  if (user == 3) {
-    script = true;
-    user_off = false;
-    user_on = false;
-  }
-  if (user == 4) {
-    script = false;
-  }
+void PIN::set_status_user(unsigned char pin_info_) {
+  pin_info &= ~(FLAG_USER_ON | FLAG_USER_OFF | FLAG_SCRIPT);
+  pin_info |= (pin_info_ & (FLAG_USER_ON | FLAG_USER_OFF | FLAG_SCRIPT));
+
+  changed_flags = true;
 }
 void PIN::set_status_pin(bool status) {
-  status_pin = status;
+  bool z = pin_info & FLAG_STATUS_PIN;
+  if (status != z) {
+    Serial.print("[LOG] новый статус PIN ");
+    Serial.println(status);
+    changed_flags = true;
+    if (status) {
+      pin_info |= FLAG_STATUS_PIN;
+    } else {
+      pin_info &= ~FLAG_STATUS_PIN;
+    }
+  }
 }
 
-unsigned int PIN::get_pinNumber() {
+unsigned int PIN::get_pinNumber() const {
   return pinNumber;
+}
+void PIN::set_pir_sensor(bool on) {
+  if (on) {
+    pin_info |= FLAG_PIR_SENSOR;
+    pir_sensor_time_on = millis();
+    time_pir_activ = myclock.getEpochMillis();
+  } else {
+    pin_info &= ~FLAG_PIR_SENSOR;
+  }
+}
+void PIN::set_pir_sensor_interval(const unsigned long &time_off) {
+  time_off_ = time_off;
+}
+void PIN::set_USER_ON(bool status) {
+  bool oldState = pin_info & FLAG_SWITCH_STATE;
+  bool check = oldState != status;
+  if (check) {
+
+    Serial.print("[INF] выключатель щелкнул ");
+    Serial.println(pinNumber);
+    if (pin_info & FLAG_USER_ON) {
+      time_delay = millis();
+      pin_info |= FLAG_SCRIPT;
+      pin_info &= ~FLAG_USER_ON;
+      pin_info &= ~FLAG_USER_OFF;
+
+    } else if (pin_info & FLAG_USER_OFF) {
+      pin_info |= FLAG_USER_ON;
+      pin_info &= ~FLAG_USER_OFF;
+      pin_info &= ~FLAG_SCRIPT;
+
+    } else {
+      pin_info |= FLAG_USER_ON;
+      pin_info &= ~FLAG_USER_OFF;
+      pin_info &= ~FLAG_SCRIPT;
+    }
+    if (status) {
+      pin_info |= FLAG_SWITCH_STATE;
+    } else {
+      pin_info &= ~FLAG_SWITCH_STATE;
+    }
+  }
 }

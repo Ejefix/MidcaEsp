@@ -16,6 +16,7 @@ public:
         pin16,pin17,pin18,pin19,pin20,
         pin21,pin22,pin23,pin24,pin25,
         pin26,pin27,pin28,pin29,pin30,
+        pin31,pin32,pin33,pin34,pin35,
 
         idESP,idUSER, idSer,
         accepted,
@@ -38,6 +39,7 @@ public:
         "%p16", "%p17", "%p18", "%p19", "%p20",
         "%p21", "%p22", "%p23", "%p24", "%p25",
         "%p26", "%p27", "%p28", "%p29", "%p30",
+        "%p31", "%p32", "%p33", "%p34", "%p35",
 
         "%I00", "%I11", "%I88",
         "%G00",

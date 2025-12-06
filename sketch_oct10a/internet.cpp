@@ -7,7 +7,7 @@
 #include "setupesp.h"
 #include <utility>
 #include "commandexecutor.h"
-
+#include "pin.h"
 bool serverOK = true;
 
 const unsigned long long Internet::epochDiff{ 1000 * 60 * 4 };
@@ -25,7 +25,7 @@ bool Internet::connect() {
     return false;
   }
   client.stop();
-  if (client.connect("176.60.208.46", 64530)) {
+  if (client.connect("176.60.208.46", 64525)) {
     Serial.println("✅ Соединение с сервером установлено");
     client.print(body());
     client.flush();
@@ -98,10 +98,10 @@ int Internet::get_command() {
 int countProcess{ 0 };
 void Internet::processServerResponse() {
 
+  CommandExecutor comEx;
   while (true) {
     ++countProcess;
     delay(5);
-    
     if (client.available()) {
       size_t size{};
       char* data = read_buffer(size);
@@ -111,8 +111,6 @@ void Internet::processServerResponse() {
       String packet(data, size);
       String decrypted = Encryption::decrypt(packet);  // <-- передать сюда data
       delete[] data;
-      CommandExecutor comEx;
-
       Serial.println("[LOG] получена команда -> " + decrypted);
       int comm = comEx.begin(decrypted);
       if (comm == Skeleton::idSer) {
@@ -120,23 +118,29 @@ void Internet::processServerResponse() {
         serverOK = true;
       }
       if (comm == Skeleton::status_full) {
-        String body = Encryption::encrypt(comEx.full_status());
+        String body = Encryption::encrypt(comEx.full_status_pins());
         client.print(body);
         client.flush();
       }
-      if (comm >= Skeleton::pin1 && comm <= Skeleton::pin30) {
+      if (comm >= Skeleton::pin1 && comm <= Skeleton::pin35) {
         int answer = comEx.playPIN(decrypted, comm);
-        delay(10);
-        String body = Encryption::encrypt(comEx.full_status());
+        delay(1);
+        String body = Encryption::encrypt(comEx.status_pins());
         client.print(body);
         client.flush();
       }
     }
-    if (countProcess > 5000) {
+    if (PIN::changed_flags) {
+      Serial.println("[LOG] отправка изменений серверу");
+      String body = Encryption::encrypt(comEx.status_pins());
+      client.print(body);
+      client.flush();
+    }
+    if (countProcess > 15000) {
       if (client.connected() && serverOK) {
         countProcess = 0;
         serverOK = false;
-        String body = Encryption::encrypt(Skeleton::commands[Skeleton::idSer]);
+        String body = Encryption::encrypt(comEx.status_pins());
         client.print(body);
         client.flush();
       } else {

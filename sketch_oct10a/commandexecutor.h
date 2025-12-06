@@ -9,8 +9,8 @@ public:
     CommandExecutor();
     int begin(const String &packet);
     int playPIN(const String &packet, int pinNumber);
-    String full_status();
-    
+    String full_status_pins()const;
+    String status_pins()const;
 
 };
 
