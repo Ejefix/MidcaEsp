@@ -85,7 +85,21 @@ void loop() {
       Serial.println(cmd);  // показать что пришло
 
       if (cmd == "1") {
-        
+        for (int i = 0; i <= 255; i++) {
+          setBrightness(i);
+          delay(15);
+        }
+        // Пример: плавное уменьшение яркости
+        for (int i = 255; i >= 0; i--) {
+          setBrightness(i);
+          delay(15);
+        }
+        for (int i{}; i < 100; ++i) {
+          int randBrightness = random(0, 256);  // случайное значение 0-255
+          int rand = random(50, 300);  // случайное значение 0-255
+          setBrightness(randBrightness);
+          delay(rand);
+        }
       }
 
       if (cmd == "2") {
