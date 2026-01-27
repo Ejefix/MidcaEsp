@@ -1,6 +1,5 @@
 #include <Arduino.h>
 #include "globals.h"
-#include <Wire.h>  // подключаем I2C
 
 
 void processServerTask(void* param) {
@@ -9,53 +8,35 @@ void processServerTask(void* param) {
   vTaskDelete(NULL);              // удаляем задачу, если вдруг выйдет
 }
 
+const int pwmPin = 19;        // пин Gate MOSFET
+const int pwmFreq = 3000;     // частота ШИМ
+const int pwmResolution = 8;  // разрешение 8 бит (0-255)
+
+#ifdef ARDUINO_ARCH_ESP32
+#define CHECK "ESP32 core OK"
+#else
+#define CHECK "Not ESP32!"
+#endif
+
 void setup() {
-
-  for (size_t i{}; i < pins.size(); ++i) {
-    pinMode(pins[i].get_pinNumber(), OUTPUT);
-  }
-  for (size_t i{}; i < pin_pir_sensor.size(); ++i) {
-    pinMode(pin_pir_sensor[i], INPUT);
-  }
-  pins[0].set_pir_sensor_interval(5000);
-  pins[1].set_pir_sensor_interval(5000);
-
-  Wire.begin(21, 22);
-
-  /*
-  Wire.begin(21, 22);
-  Wire.beginTransmission(PCF1);
-  Wire.write(0b11110000);
-  Wire.endTransmission();
-*/
+  delay(4000);
   Serial.begin(115200);
-  delay(20);
   if (!SPIFFS.begin(true)) {  // затем монтируем заново
     Serial.println("❌❌❌ Ошибка монтирования SPIFFS!");
     return;
   }
-
   // Настройка Wi-Fi
   wifi.setup(inet.get_ssid(), inet.get_password());
-
   bool controlTime{ false };
   if (wifi.begin()) {
-    delay(500);
-    int controlclock{};
+    delay(1000);
     Serial.println("[LOG] синхронизация времени");
-    while (!controlTime) {
-
-      if (controlclock > 20) {
-        Serial.println("\n❌❌❌ не смогли синхронизировать время");
-        break;
-      }
-      delay(200);
-      ++controlclock;
-      controlTime = myclock.begin();
+    if (myclock.begin()) {
+      inet.connect();
+    } else {
+      delay(1000);
     }
   }
-
-  inet.connect();
   xTaskCreate(
     processServerTask,  // функция задачи
     "ServerTask",       // имя задачи
@@ -64,73 +45,98 @@ void setup() {
     1,                  // приоритет
     NULL                // handle
   );
+  I2C1.begin(21, 22);
+  switch1.set_pin(16);
+  switch1.load_from_json();
+  pcf_search(I2C1);
+  for (size_t i{}; i < pir_sensorG.size(); ++i) {
+    pir_sensorG[i]->load();
+  }
+  for (size_t i{}; i < pinsG.size(); ++i) {
+    auto id = pinsG[i].get_pinNumber();
+    if (id < 40) {
+      pinMode(id, OUTPUT);
+    }
+    pinsG[i].load();
+  }
+
+  for (size_t i{}; i < switch_mechanicsG.size(); ++i) {
+    switch_mechanicsG[i].load();
+  }
+  ledcAttach(pwmPin, pwmFreq, pwmResolution);
 }
-
-unsigned long lastSave = 0;
-const unsigned long saveInterval = 60 * 1000 * 60 * 5;
-
-unsigned long lastRead = 0;
-const unsigned long ReadInterval = 100;
-bool prev[3][3];
-int save_prev{};
-
+// Функция установки яркости
+// brightness: 0 (выключено) ... 255 (максимум)
+void setBrightness(int brightness) {
+  if (brightness < 0) brightness = 0;
+  if (brightness > 255) brightness = 255;
+  ledcWrite(pwmPin, brightness);
+}
+int tone_{ 50 };
+String cmd;
 void loop() {
-  unsigned long now = millis();
 
-  wifi.setup(inet.get_ssid(), inet.get_password());
-  wifi.maintain();
-  myclock.loop();
 
-  for (size_t i{}; i < pin_pir_sensor.size(); ++i) {
-    bool pir = digitalRead(pin_pir_sensor[i]);
-    pins[i].set_pir_sensor(pir);
-  }
+  while (Serial.available()) {  // есть данные
+    char c = Serial.read();     // читаем символ
+    if (c == '\n') {            // конец команды
+      cmd.trim();               // убрать \r \n
+      Serial.print("[RX] ");
+      Serial.println(cmd);  // показать что пришло
 
-  //unsigned char pin_info_new{ 0b00000000 };
-  for (size_t i{}; i < pins.size(); ++i) {
-    bool a = pins[i].isPinActivation(myclock.getEpochMillis());
-    if (now - lastSave >= saveInterval) {
-      pins[i].save();
-      lastSave = now;
-    }
-    if (a) {
-      pins[i].set_status_pin(true);
-      digitalWrite(pins[i].get_pinNumber(), LOW);
-      // pin_info_new &= ~(1 << i);
-    } else {
-
-      pins[i].set_status_pin(false);
-      digitalWrite(pins[i].get_pinNumber(), HIGH);
-      // pin_info_new |= (1 << i);
-    }
-  }
-
-  if (now - lastRead >= ReadInterval) {
-    lastRead = now;
-    Wire.requestFrom(PCF, (uint8_t)1);
-    if (save_prev > 2) save_prev = 0;
-    if (Wire.available()) {
-      byte data = Wire.read();  // читаем 8 бит
-      // сохраняем последние 3 состояния
-      for (int i = 0; i < 3; i++) {
-        prev[save_prev][i] = (bitRead(data, i) == 1);
+      if (cmd == "1") {
+        for (int i = 0; i <= 255; i++) {
+          setBrightness(i);
+          delay(15);
+        }
+        // Пример: плавное уменьшение яркости
+        for (int i = 255; i >= 0; i--) {
+          setBrightness(i);
+          delay(15);
+        }
+        for (int i{}; i < 100; ++i) {
+          int randBrightness = random(0, 256);  // случайное значение 0-255
+          int rand = random(50, 300);  // случайное значение 0-255
+          setBrightness(randBrightness);
+          delay(rand);
+        }
       }
-      ++save_prev;
-    }
-    bool stable[3];
-    for (int i = 0; i < 3; i++) {
-      stable[i] = (prev[0][i] == prev[1][i]) && (prev[1][i] == prev[2][i]);
-    }
-    // применяем к пинам только если стабильно
-    if (stable[0]) {
-      pins[0].set_USER_ON(prev[2][2]);
-    }
-    if (stable[1]) {
-      pins[1].set_USER_ON(prev[2][1]);
 
+      if (cmd == "2") {
+        beep.startBeep(5);
+      }
+      if (cmd == "3") {
+        tone(16, tone_);  // подаём 1000 Гц
+        delay(500);       // держим полсекунды
+        noTone(16);       // выключаем звук
+        tone_ -= 10;
+        Serial.println(tone_);
+      }
+      if (cmd == "err") {
+        Serial.println("[OK] команда принята");
+      }
+      cmd = "";  // очистить буфер
+    } else {
+      cmd += c;  // собираем строку
     }
-    if (stable[2]) {
-      pins[3].set_USER_ON(prev[2][0]);
-    }
-  }  
+  }
+  unsigned long now = millis();
+  for (size_t i{}; i < pcfG.size(); ++i) {
+    pcfG[i].read();
+  }
+  temp_monitor.begin();
+  switch1.begin();
+  wifi.setup(inet.get_ssid(), inet.get_password());  // ??????????????????????????????77
+  wifi.maintain();                                   //???????????????????????????????????
+  myclock.loop();
+  for (size_t i{}; i < switch_mechanicsG.size(); ++i) {
+    switch_mechanicsG[i].begin();
+  }
+  for (size_t i{}; i < pinsG.size(); ++i) {
+    pinsG[i].begin();
+  }
+  for (size_t i{}; i < pir_sensorG.size(); ++i) {
+    pir_sensorG[i]->get_activ();
+  }
+  beep.update();
 }

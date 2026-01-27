@@ -7,11 +7,11 @@ class CommandExecutor : public Skeleton
 {
 public:
     CommandExecutor();
-    int begin(const String &packet);
-    int playPIN(const String &packet, int pinNumber);
-    String full_status_pins()const;
-    String status_pins()const;
-
+    int begin(const String &packet)const;
+    int playPIN(const String &packet, int pinNumber)const;
+    int playPIR(const String &packet)const;
+    int playSM(const String &packet)const;
+    String full_status_json() const;
 };
 
 #endif // COMMANDEXECUTOR_H
