@@ -8,15 +8,6 @@ void processServerTask(void* param) {
   vTaskDelete(NULL);              // удаляем задачу, если вдруг выйдет
 }
 
-const int pwmPin = 19;        // пин Gate MOSFET
-const int pwmFreq = 3000;     // частота ШИМ
-const int pwmResolution = 8;  // разрешение 8 бит (0-255)
-
-#ifdef ARDUINO_ARCH_ESP32
-#define CHECK "ESP32 core OK"
-#else
-#define CHECK "Not ESP32!"
-#endif
 
 void setup() {
   delay(4000);
@@ -63,16 +54,10 @@ void setup() {
   for (size_t i{}; i < switch_mechanicsG.size(); ++i) {
     switch_mechanicsG[i].load();
   }
-  ledcAttach(pwmPin, pwmFreq, pwmResolution);
+ 
 }
-// Функция установки яркости
-// brightness: 0 (выключено) ... 255 (максимум)
-void setBrightness(int brightness) {
-  if (brightness < 0) brightness = 0;
-  if (brightness > 255) brightness = 255;
-  ledcWrite(pwmPin, brightness);
-}
-int tone_{ 50 };
+
+
 String cmd;
 void loop() {
 
@@ -85,32 +70,13 @@ void loop() {
       Serial.println(cmd);  // показать что пришло
 
       if (cmd == "1") {
-        for (int i = 0; i <= 255; i++) {
-          setBrightness(i);
-          delay(15);
-        }
-        // Пример: плавное уменьшение яркости
-        for (int i = 255; i >= 0; i--) {
-          setBrightness(i);
-          delay(15);
-        }
-        for (int i{}; i < 100; ++i) {
-          int randBrightness = random(0, 256);  // случайное значение 0-255
-          int rand = random(50, 300);  // случайное значение 0-255
-          setBrightness(randBrightness);
-          delay(rand);
-        }
+        
       }
 
       if (cmd == "2") {
         beep.startBeep(5);
       }
       if (cmd == "3") {
-        tone(16, tone_);  // подаём 1000 Гц
-        delay(500);       // держим полсекунды
-        noTone(16);       // выключаем звук
-        tone_ -= 10;
-        Serial.println(tone_);
       }
       if (cmd == "err") {
         Serial.println("[OK] команда принята");

@@ -1,0 +1,29 @@
+##################################################
+# Syntax Coloring Map For Soldered-Microphone Library
+##################################################
+
+##################################################
+# Datatypes (KEYWORD1)
+##################################################
+Microphone	KEYWORD1
+
+##################################################
+# Methods and Functions (KEYWORD2)
+##################################################
+begin	KEYWORD2
+read	KEYWORD2
+readNonBlocking	KEYWORD2
+sampleRate	KEYWORD2
+setSampleRate	KEYWORD2
+setHPF	KEYWORD2
+setGain	KEYWORD2
+setGainDb	KEYWORD2
+rms	KEYWORD2
+peak	KEYWORD2
+dbfs	KEYWORD2
+processAudio	KEYWORD2
+
+##################################################
+# Constants (LITERAL1)
+##################################################
+

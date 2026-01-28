@@ -28,6 +28,7 @@ unsigned int PIR_SENSOR::get_id() const {
 }
 void PIR_SENSOR::set_status(bool act) {
   status = act;
+  PIN::changed_flags = true;
   save();
 }
 
@@ -322,16 +323,7 @@ bool PIR_SENSOR::get_activ() {
     }
   }
   auto time = myclock.getEpochMillis();
-  if (script_time.first != 0) {
-    while (script_time.second < time) {
-      script_time.first += one_day;
-      script_time.second += one_day;
-    }
-    // время когда не реагируем на него
-    if (script_time.first <= time && time <= script_time.second) {
-      return false;
-    }
-  }
+  
   if (!status)  // принудительно выключена реакция
   {
     return false;
