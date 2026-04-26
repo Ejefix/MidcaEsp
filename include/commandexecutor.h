@@ -1,0 +1,21 @@
+#ifndef COMMANDEXECUTOR_H
+#define COMMANDEXECUTOR_H
+#include <skeleton.h>
+#include <Arduino.h>
+
+#include "firmware_profile.h" // здесь выбор прошивки
+
+class CommandExecutor : public Skeleton
+{
+public:
+    CommandExecutor();
+    int begin(const String &packet) const;
+    int playPIN(const String &packet, int pinNumber) const;
+#if FW_BUILD == FW_RELAY
+    int playPIR(const String &packet) const;
+    int playSM(const String &packet) const;
+#endif
+    String full_status_json() const;
+};
+
+#endif // COMMANDEXECUTOR_H
