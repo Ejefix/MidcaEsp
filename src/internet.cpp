@@ -24,7 +24,7 @@ bool Internet::connect()
     return false;
   }
   connect_server = false;
-  if (client_server.connect("176.60.208.46", 64530))
+  if (client_server.connect("api.midca.ru", 64530))
   {
     Serial.println("✅ Соединение с сервером установлено");
     client_server.print(body());
@@ -58,6 +58,7 @@ void Internet::startTCPSerwer()
 String Internet::body()
 {
 
+  Encryption enc{};
   Serial.println("[LOG] Отправка авторизации серверу");
   String body = Skeleton::commands[Skeleton::idESP];
   int sizeID = Skeleton::id.length();
@@ -68,7 +69,7 @@ String Internet::body()
   String secret = "?6G:N0$ua;0n[?hu";
   unsigned long long epoch = myclock->getEpoch_hash();
 
-  String hash = Encryption::get_hash(epoch, secret, Skeleton::id);
+  String hash = Encryption::get_hash(epoch, Skeleton::id, enc.get_key());
   body += hash;
   return body;
 }
@@ -105,6 +106,7 @@ void Internet::processServerResponse()
     {
       Serial.println("[LOG] Подлючился девайс");
       clients.push_back(new WiFiClient(clientDevice));
+      full_status(clientDevice);
     }
     if (clients.size() > 15)
     {
@@ -171,22 +173,24 @@ void Internet::processServerResponse()
         }
       }
     };
-
-    if (PIN::changed_flags || PIR_SENSOR::changed_flags)
     {
-      device_full();
-      Serial.println("[LOG] Отправка изменений серверу");
-      full_status(client_server);
-      go_fullstatus = millis();
-    }
-    else
-    {
-      if (millis() - go_fullstatus > interval)
+      
+      if (updateDATA)
       {
         device_full();
-        go_fullstatus = millis();
         Serial.println("[LOG] Отправка изменений серверу");
         full_status(client_server);
+        go_fullstatus = millis();
+      }
+      else
+      {
+        if (millis() - go_fullstatus > interval)
+        {
+          device_full();
+          go_fullstatus = millis();
+          Serial.println("[LOG] Отправка изменений серверу");
+          full_status(client_server);
+        }
       }
     }
     ping_pong();
@@ -256,12 +260,12 @@ void Internet::full_status(WiFiClient &client_)
 {
 
   CommandExecutor comEx;
-  fullStatus = Encryption::encrypt(comEx.full_status_json());
-  if (PIN::changed_flags || PIR_SENSOR::changed_flags || fullStatus.isEmpty())
+  
+  if (updateDATA || fullStatus.isEmpty())
   {
+    fullStatus = Encryption::encrypt(comEx.full_status_json());
     to_send(client_, fullStatus);
-    PIN::changed_flags = false;
-    PIR_SENSOR::changed_flags = false;
+    updateDATA = false;
   }
   else
   {
@@ -285,11 +289,10 @@ int Internet::communication_socet(WiFiClient &client_)
     if (id_cmd[i] == cmdId)
     {
       Serial.println("[LOG] команда с таким ID уже обработана ");
-      String body = Encryption::encrypt(Skeleton::commands[Skeleton::accepted]);
-      to_send(client_, body, cmdId);
       return 0;
     }
   }
+
   if (id_cmd.size() > 30)
   {
     id_cmd.erase(id_cmd.begin());
@@ -298,6 +301,7 @@ int Internet::communication_socet(WiFiClient &client_)
   {
     id_cmd.push_back(cmdId);
   }
+
   packet.remove(0, 4);
   String decrypted = Encryption::decrypt(packet); // <-- передать сюда
   if (decrypted.isEmpty())
@@ -312,6 +316,10 @@ int Internet::communication_socet(WiFiClient &client_)
 
   if (answer == Skeleton::status_full)
   {
+    String body = Encryption::encrypt(Skeleton::commands[Skeleton::accepted]);
+    to_send(client_, body, cmdId);
+    Serial.print("[LOG] Отправка подтверждения принятия комманды ");
+    Serial.println(cmdId);
     full_status(client_);
     return answer;
   }
@@ -403,24 +411,17 @@ int Internet::process_cmd(String &decrypted)
   {
     return Skeleton::status_full;
   }
-  // без указания ID
-  if (comm >= Skeleton::pin2 && comm <= Skeleton::pin35)
-  {
-    err = comEx.playPIN(decrypted, comm);
-    return err;
-  }
-  // новый формат команды с ID
-  else if (comm >= Skeleton::pin1)
+
+  if (comm >= Skeleton::pin1)
   {
     auto idStirng = decrypted.substring(4, 8);
     unsigned int id = idStirng.toInt();
+    decrypted.remove(4, 4);
     for (int i{}; i < pinsG.size(); ++i)
     {
-      if (id == pinsG[i]->get_id())
+      if (id == 9999 || id == pinsG[i]->get_id())
       {
-        decrypted.remove(4, 4);
-        err = comEx.playPIN(decrypted, id);
-        return err;
+        err = comEx.playPIN(decrypted, pinsG[i]->get_id());
       }
     }
   }
@@ -536,7 +537,7 @@ void Internet::communication_udp()
   int packetSize = Udp.parsePacket(); // проверяем, пришёл ли пакет
   if (packetSize)
   {
-    if (packetSize > 10)
+    if (packetSize > 50)
     { // больше 10 символов не принимаем
       // читаем и отбрасываем
       char discard[packetSize];
@@ -545,14 +546,14 @@ void Internet::communication_udp()
       return;
     }
 
-    char buffer[11];                // 10 символов + нуль
-    int len = Udp.read(buffer, 10); // читаем максимум 10
+    char buffer[50];                // 10 символов + нуль
+    int len = Udp.read(buffer, 50); // читаем максимум 10
     buffer[len] = 0;                // завершаем строку нулём
 
     auto receivedRequest = String(buffer); // сохраняем в переменную
     Serial.print("Принято: ");
     Serial.println(receivedRequest);
-    if (receivedRequest == local_name)
+    if (receivedRequest == local_name + Skeleton::id)
     {
       auto ip = wifi.get_my_ip();
       Udp.beginPacket(Udp.remoteIP(), Udp.remotePort());

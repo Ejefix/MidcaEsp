@@ -51,84 +51,31 @@ int CommandExecutor::playPIN(const String &packet, int pinNumber) const
   // выполняем действие
   for (size_t i{}; i < pinsG.size(); ++i)
   {
-    int number = pinsG[i]->get_pinNumber();
+    int number = pinsG[i]->get_id();
+
     if (number != pinNumber)
       continue;
-
     if (size == 5)
     {
-      if (pin_info == 0)
-      {
-        return -6;
-      }
+
       pinsG[i]->set_status_user(pin_info);
       return 0;
     }
-
-    if (com == Skeleton::time_on)
-    {
-      Serial.print("[LOG] Добавление сценария  pin ");
-      Serial.println(number);
-      String first;
-      first.reserve(15);
-      String second;
-      second.reserve(15);
-      bool first_{true};
-      for (int i{8}; i < packet.length(); ++i)
-      {
-        if (packet[i] == '%')
-        {
-          i += 3;
-          first_ = false;
-          continue;
-        }
-        if (first_)
-        {
-          first += packet[i];
-        }
-        else
-        {
-          second += packet[i];
-        }
-      }
-      char *endptr;
-      std::pair<unsigned long long, unsigned long long> timePair;
-      timePair.first = strtoull(first.c_str(), &endptr, 10);
-      if (*endptr != '\0')
-        return -5;
-      timePair.second = strtoull(second.c_str(), &endptr, 10);
-      if (*endptr != '\0')
-        return -6;
-      pinsG[i]->push_script_time(timePair);
-      Serial.println("[LOG] Удачно добавили сценарий");
-      return 0;
-    }
-    if (com == Skeleton::time_off)
+    if (com == Skeleton::brightness)
     {
       String second;
-      second.reserve(15);
+      second.reserve(3);
       for (int i{8}; i < packet.length(); ++i)
       {
         second += packet[i];
       }
+      Serial.println("[LOG] ----------------------------------------получили->" + packet);
       char *endptr;
       unsigned long long secondLong = strtoull(second.c_str(), &endptr, 10);
       if (*endptr != '\0')
         return -7;
-      Serial.println("[LOG] получили время которое надо удалить ->" + second);
-      bool ok = pinsG[i]->clear_script_time(secondLong);
-      if (ok)
-      {
-        Serial.print("[LOG] Сценарий для pin ");
-        Serial.print(number);
-        Serial.println(" удалён.");
-      }
-      else
-      {
-        Serial.print("[LOG] Сценарий для pin ");
-        Serial.print(number);
-        Serial.println(" не получилось удалить.");
-      }
+      Serial.println("[LOG] ----------------------------------------получили яркость для установки ->" + second);
+      pinsG[i]->set_brightness(secondLong);
       return 0;
     }
   }
@@ -210,7 +157,6 @@ int CommandExecutor::playPIR(const String &packet) const
         return 0;
       }
     }
-    
   }
   if (comm == Skeleton::commands[Skeleton::script_on])
   {
@@ -228,7 +174,7 @@ int CommandExecutor::playPIR(const String &packet) const
       Serial.println("[INF] Удалили время сценария в Pir ");
       return 0;
     }
-    
+
     if (times.substring(end, end + 4) == Skeleton::commands[Skeleton::script_off])
     {
       int start = end + 4;
@@ -293,39 +239,25 @@ int CommandExecutor::playSM(const String &packet) const
 #endif
 String CommandExecutor::full_status_json() const
 {
-  auto mainDoc = new DynamicJsonDocument(4096);
-#if FW_BUILD == FW_RELAY
-  // создаём массив switch433 в главном документе
-  JsonArray arr = mainDoc->createNestedArray("433");
-  switch1.fill_json(arr);
-#endif
-  JsonArray pinsJson = mainDoc->createNestedArray("PINS");
+  JsonDocument mainDoc{};
+  mainDoc["ID"] = id;
+  mainDoc["time"] = millis();
+  JsonObject data = mainDoc["data"].to<JsonObject>();
+
+  JsonArray pinsJson = data["PINS"].to<JsonArray>();
   for (size_t i{}; i < pinsG.size(); ++i)
   {
     pinsG[i]->fill_json(pinsJson);
   }
-  #if FW_BUILD == FW_RELAY
-  JsonArray pirJson = mainDoc->createNestedArray("PIR");
-  for (size_t i{}; i < pir_sensorG.size(); ++i)
-  {
-    pir_sensorG[i]->fill_json(pirJson);
-  }
-  JsonArray smJson = mainDoc->createNestedArray("SM");
+  JsonArray deviceJson = data["DEVICE"].to<JsonArray>();
+  device_registry->fill_json(deviceJson);
 
-  for (size_t i{}; i < switch_mechanicsG.size(); ++i)
-  {
-    switch_mechanicsG[i].fill_json(smJson);
-  }
-  JsonArray temp = mainDoc->createNestedArray("T");
-  temp_monitor.fill_json(temp);
-#endif
   String out;
-  serializeJson(*mainDoc, out); // строка для передачи
+  serializeJson(mainDoc, out); // строка для передачи
   size_t size = strlen(out.c_str());
   Serial.print("[INF] Размер данных JSON: ");
   Serial.print(size);
   Serial.println(" байт");
-  delete mainDoc;
   return Skeleton::commands[Skeleton::status_full] + out; // возвращаем строку
-  //return  out; // возвращаем строку
+  // return  out; // возвращаем строку
 }

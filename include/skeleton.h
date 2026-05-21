@@ -28,7 +28,7 @@ public:
     off,
     time_on, time_off, user_on, user_off,
 
-    script_on,script_off,
+    script_on,script_off, brightness,
 
     pir, push, remove, sm,
 
@@ -56,7 +56,7 @@ public:
     "%O02",
     "%t01", "%t02", "%U01", "%U02",
     
-    "%U03", "%U04",
+    "%U03", "%U04", "%B04",
 
 
     "%P00", "%A00", "%A01","%SM0",

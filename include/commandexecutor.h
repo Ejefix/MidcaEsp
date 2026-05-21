@@ -3,8 +3,6 @@
 #include <skeleton.h>
 #include <Arduino.h>
 
-#include "firmware_profile.h" // здесь выбор прошивки
-
 class CommandExecutor : public Skeleton
 {
 public:
@@ -17,5 +15,5 @@ public:
 #endif
     String full_status_json() const;
 };
-
+ 
 #endif // COMMANDEXECUTOR_H

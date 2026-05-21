@@ -1,22 +1,38 @@
 #ifndef GLOBALS_H
 #define GLOBALS_H
-
-#include "firmware_profile.h"  // здесь выбор прошивки
-
-#if FW_BUILD == FW_RELAY
-  #include "globalsRelay.h"
-#elif FW_BUILD == FW_PWM
-  #include "globalsPWM.h"
-#else
-  #error "Unknown firmware build"
-#endif
+#include "pindriver.h"
+#include "pin.h"
 #include "myWIFI.h"
 #include "internet.h"
+#include <Adafruit_MCP23X17.h> 
+#include "gpio_pin.h"
+
+
+#define FW_RELAY 1
+#define FW_PWM   2
+#define FW_R 3
+
+#define FW_BUILD 3
+
 
 // Настройки Wi-Fi
 extern MyWiFi wifi;
 extern Internet inet;
 extern CLOCK myclock;
+extern std::vector<Adafruit_MCP23X17*> mcpG;
+extern const std::pair<int,int>  wire_pair;
+
+extern DeviceRegistry* device_registry;
+extern DeviceBinder * device_binder;
 
 
+extern const std::array<int,15> ESP_GPIO;
+extern std::vector<std::array<IGpioPin*,16>> gpioSignal;
+extern const std::array<IPinDriver*,15> PinDriver;
+extern std::array<PIN*, 15> pinsG;
+extern const std::array<IGpioPin*,16> pinsMcpG;
+
+void setupStart();
+std::vector<uint8_t> scanI2C();
+extern bool updateDATA;
 #endif

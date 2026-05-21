@@ -55,7 +55,7 @@ void TempMonitor::begin() {
 
 void TempMonitor::fill_json(JsonArray &arr) const {
   for (auto it = tempID->begin(); it != tempID->end(); ++it) {
-    JsonObject obj = arr.createNestedObject();
+    JsonObject obj = arr.add<JsonObject>();
     obj["i"] = it->second;
     obj["t"] = it->first;
   }

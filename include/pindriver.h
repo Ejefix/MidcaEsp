@@ -36,7 +36,7 @@ inline bool operator!=(DriverCaps a, DriverCaps b)
 class IPinDriver
 {
 public:
-    virtual void write(bool on, uint8_t brightness) = 0; // выполнить команду
+    virtual bool write(bool on, uint8_t brightness) = 0; // выполнить команду
     virtual DriverCaps caps() const = 0;                 // описать возможности
     virtual ~IPinDriver() {}
 };
@@ -49,7 +49,7 @@ class RelayDriver : public IPinDriver
 public:
     explicit RelayDriver(int pin);
 
-    void write(bool on, uint8_t) override;
+    bool write(bool on, uint8_t) override;
     DriverCaps caps() const override;
 
 private:
@@ -65,7 +65,7 @@ class PWMDriver : public IPinDriver
 public:
     PWMDriver(int pin);
 
-    void write(bool on, uint8_t brightness) override;
+    bool write(bool on, uint8_t brightness) override;
     DriverCaps caps() const override;
     uint8_t getBrightness() const;
 

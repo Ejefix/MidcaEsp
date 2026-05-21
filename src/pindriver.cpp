@@ -9,13 +9,12 @@ RelayDriver::RelayDriver(int pin) : pin(pin)
     digitalWrite(pin, HIGH);
 }
 
-void RelayDriver::write(bool on, uint8_t)
+bool RelayDriver::write(bool on, uint8_t)
 {
-
+    
     if (state == on)
-        return;
+        return false;
     state = on;
-
     if (on)
     {
         digitalWrite(pin, LOW);
@@ -24,6 +23,12 @@ void RelayDriver::write(bool on, uint8_t)
     {
         digitalWrite(pin, HIGH);
     }
+    Serial.print("[INF] записали в  ");
+    Serial.print(" пин ");
+    Serial.print(pin);
+    Serial.print(" состояние ");
+    Serial.println(state);
+    return true;
 }
 
 DriverCaps RelayDriver::caps() const
@@ -46,10 +51,10 @@ PWMDriver::PWMDriver(int pin)
     ledcAttachPin(pin, channel); // привязка пина
 }
 
-void PWMDriver::write(bool on, uint8_t b)
+bool PWMDriver::write(bool on, uint8_t b)
 {
     if (state == on && brightness == b)
-        return; // ничего не изменилось
+        return false;
 
     brightness = b;                 // сохраняем состояние
     state = on;
@@ -60,6 +65,7 @@ void PWMDriver::write(bool on, uint8_t b)
     Serial.print(pin);
     Serial.print(" яркость ");
     Serial.println(b);
+    return true;
 }
 
 uint8_t PWMDriver::getBrightness() const
@@ -69,5 +75,5 @@ uint8_t PWMDriver::getBrightness() const
 
 DriverCaps PWMDriver::caps() const
 {
-    return DriverCaps::Brightness | DriverCaps::PWM;
+    return DriverCaps::Brightness;
 }

@@ -7,9 +7,11 @@
 #include "globals.h"
 
 Encryption::Encryption() {
+  String secret = String(password.c_str()) + get_secret(); // собираем секрет
+  key = get_hash(0, secret, ""); 
 }
 
-String Encryption::get_hash(unsigned long long time, const String &secret, const String &id) const {
+String Encryption::get_hash(unsigned long long time, const String &id, const String &secret) const {
 
   std::string input;
   if (time == 0) {
@@ -38,10 +40,6 @@ String Encryption::get_hash(unsigned long long time, const String &secret, const
 String Encryption::encrypt(const String& plaintext) const
 {
  
-  // --- ключ ---
-  String secret = String(password.c_str()) + get_secret(); // собираем секрет
-  String key = get_hash(0, secret, "");                     // получаем AES-ключ
-
   // --- IV и TAG (маленькие, можно на стеке) ---
   const size_t iv_len = 12;                          // длина IV
   uint8_t iv[iv_len];                                // IV
@@ -96,11 +94,6 @@ String Encryption::encrypt(const String& plaintext) const
 
 String Encryption::decrypt(const String &packet) const {
 
-  String key;
-  String secretBytes = String(password.c_str()) + get_secret();
-  key = get_hash(0, secretBytes, "");
-
-
   const size_t iv_len = 12;
   const size_t tag_len = 16;
 
@@ -141,4 +134,9 @@ String Encryption::decrypt(const String &packet) const {
   String plaintext = String((char *)output, ct_len);
   free(output);
   return plaintext;
+}
+
+String Encryption::get_key() const
+{
+    return key;
 }

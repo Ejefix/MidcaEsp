@@ -50,7 +50,7 @@ private:
   int cmd_id_count{1000};
   bool connect_server{false};
   bool serverOK {false};
-  const String local_name = "ESPMAIN";
+  const String local_name = "MIDCAMAINU";
 }; 
 
 #endif 
