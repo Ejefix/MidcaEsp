@@ -46,8 +46,11 @@ public:
   void begin();
 
   PinId get_id() const;
-  Lock get_active_lock() const;
-  Lock get_pending_lock() const;
+
+  
+  Lock get_active_lock(ActionType type) const;
+  Lock get_pending_lock(ActionType type) const;
+  
   ExecuteResult executor(const ScheduledIntent &intent, uint8_t priority, LockPolicyType policy, timeMS endTime = 0);
 
   static bool changed_flags;
@@ -72,8 +75,14 @@ private:
   uint8_t brightness_from{100};
   uint8_t brightness{100};
   uint32_t timeFADE{};
-  Lock active_lock{};  // текущий активный блокирующий intent
-  Lock pending_lock{}; // предыдущий / вытесненный / заменённый
+  Lock active_power_lock{};  // активный lock для ON/OFF/TOGGLE
+  Lock pending_power_lock{}; // предыдущий/вытесненный для power
+
+  Lock active_brightness_lock{};  // активный lock для FADE
+  Lock pending_brightness_lock{}; // предыдущий/вытесненный для brightness
+
+  Lock *active{nullptr};
+  Lock *pending{nullptr};
 };
 
 #endif // PIN_H

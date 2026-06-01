@@ -44,7 +44,8 @@ void IntentExecutor::executorPIN(const ScheduledIntent &intent) const
         if (pinsG[i]->get_id() == targetID)
         {
             ExecuteResult rezult = ExecuteResult::UNSUPPORTED_ACTION;
-            if (intent.life == LifetimeType::ONESHOT)
+            // это повидение учитывает только если не указан временной интервал и намериние однократное !
+            if (intent.life == LifetimeType::ONESHOT &&  intent.schedule.startTime == intent.schedule.endTime)
             {
                 // ExecuteResult executor(const ScheduledIntent &intent, uint8_t priority, LockPolicyType policy, timeMS endTime = 0);
                 auto rezult = pinsG[i]->executor(intent, store->resolvePriority(intent.source, intent.urgency), LockPolicyType::INFINITE);
@@ -57,11 +58,11 @@ void IntentExecutor::executorPIN(const ScheduledIntent &intent) const
                 case ExecuteResult::OVERRIDE_EQUAL_PRIORITY:
                 case ExecuteResult::OVERRIDE_LOWER_PRIORITY:
                     store->setState(intent.id, IntentState::DONE);
-                    store->setState(pinsG[i]->get_pending_lock().id, IntentState::RUNNING);
+                    store->setState(pinsG[i]->get_pending_lock(intent.intent.type).id, IntentState::RUNNING);
                     break;
                 case ExecuteResult::BLOCKED_BY_HIGHER_PRIORITY:
                     rezultPIN.rezult = ExecuteResult::BLOCKED_BY_HIGHER_PRIORITY;
-                    rezultPIN.blockingIntentID = pinsG[i]->get_active_lock().id;
+                    rezultPIN.blockingIntentID = pinsG[i]->get_active_lock(intent.intent.type).id;
                     store->setState(intent.id, IntentState::STOP, rezultPIN);
                     break;
                 case ExecuteResult::INVALID_PAYLOAD:

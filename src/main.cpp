@@ -164,7 +164,7 @@ void loop()
   {
 
     device_binder->begin();
-    scheduler->begin();
+    arbitrator->begin();
     intent_executor->begin();
     for (size_t i{}; i < pinsG.size(); ++i)
     {

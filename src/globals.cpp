@@ -12,7 +12,7 @@ const std::pair<int, int> wire_pair{4, 5};
 DeviceRegistry *device_registry{new DeviceRegistry{}};
 DeviceBinder * device_binder{new DeviceBinder {}};
 ScheduledIntentStore *store{new ScheduledIntentStore{}};
-Arbitrator * scheduler{new Arbitrator{*store}};
+Arbitrator * arbitrator{new Arbitrator{*store}};
 IntentExecutor *intent_executor{new IntentExecutor{}}; 
 bool updateDATA{false};
 

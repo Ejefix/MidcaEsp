@@ -54,6 +54,8 @@ enum class ActionType
     OFF,    // выключить пин/устройство
     TOGGLE, // инвертировать состояние
     FADE,   // плавно изменить яркость за время
+    ONandFADE, // включить с яркостью
+
     DISCONNECT,
 
     PUSH,

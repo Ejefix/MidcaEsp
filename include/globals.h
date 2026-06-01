@@ -6,7 +6,7 @@
 #include "internet.h"
 #include <Adafruit_MCP23X17.h> 
 #include "gpio_pin.h"
-#include "scheduler.h"
+#include "arbitrator.h"
 #include "intentExecutor.h"
 
 #define FW_RELAY 1
@@ -24,7 +24,7 @@ extern CLOCK myclock;
 extern std::vector<Adafruit_MCP23X17*> mcpG;
 extern const std::pair<int,int>  wire_pair;
 extern ScheduledIntentStore *store;
-extern Arbitrator * scheduler;
+extern Arbitrator * arbitrator;
 extern DeviceRegistry* device_registry;
 extern DeviceBinder * device_binder;
 extern IntentExecutor *intent_executor;

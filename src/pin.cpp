@@ -10,6 +10,8 @@ PinId PIN::id_pin{3001};
 PIN::PIN(IPinDriver *pin_driver_) : pin_driver(pin_driver_), id{id_pin}
 {
   ++id_pin;
+  active = &active_power_lock;
+  pending = &pending_power_lock;
 }
 void PIN::load()
 {
@@ -37,13 +39,30 @@ ExecuteResult PIN::executor(const ScheduledIntent &intent, uint8_t priority, Loc
   if (!pin_driver)
     return ExecuteResult::DRIVER_NOT_FOUND;
   ExecuteResult rezult{};
-  if (check_lock(active_lock))
+  switch (intent.intent.type)
   {
-    if (priority > active_lock.priority)
+  case ActionType::ON:
+  case ActionType::OFF:
+  case ActionType::TOGGLE:
+    active = &active_power_lock;
+    pending = &pending_power_lock;
+    break;
+  case ActionType::FADE:
+  {
+    active = &active_brightness_lock;
+    pending = &pending_brightness_lock;
+    break;
+  default:
+    return ExecuteResult::UNSUPPORTED_ACTION;
+  }
+  }
+  if (check_lock(*active))
+  {
+    if (priority > active->priority)
     {
       rezult = ExecuteResult::OVERRIDE_LOWER_PRIORITY;
     }
-    else if (priority == active_lock.priority)
+    else if (priority == active->priority)
     {
       rezult = ExecuteResult::OVERRIDE_EQUAL_PRIORITY;
     }
@@ -56,25 +75,27 @@ ExecuteResult PIN::executor(const ScheduledIntent &intent, uint8_t priority, Loc
   {
     rezult = ExecuteResult::SUCCESS;
   }
-  auto promote_lock = [this](const ScheduledIntent &intent, uint8_t priority, LockPolicyType policy, timeMS endTime)
+
+  auto promote_lock = [&](Lock *active, Lock *pending)
   {
-    pending_lock = active_lock;
-    active_lock = Lock{priority, intent.source, intent.id, policy, endTime};
+    *pending = *active;
+    *active = Lock{priority, intent.source, intent.id, policy, endTime};
   };
+
   switch (intent.intent.type)
   {
   case ActionType::ON:
     activPIN = true;
-    promote_lock(intent, priority, policy, endTime);
-    return rezult;
+    promote_lock(active, pending);
+    break;
   case ActionType::OFF:
     activPIN = false;
-    promote_lock(intent, priority, policy, endTime);
-    return rezult;
+    promote_lock(active, pending);
+    break;
   case ActionType::TOGGLE:
     activPIN = !activPIN;
-    promote_lock(intent, priority, policy, endTime);
-    return rezult;
+    promote_lock(active, pending);
+    break;
   case ActionType::FADE:
   {
     auto fade = std::get_if<FadePayload>(&intent.intent.payload);
@@ -83,12 +104,13 @@ ExecuteResult PIN::executor(const ScheduledIntent &intent, uint8_t priority, Loc
     timeFADE = fade->durationMs;
     brightness_to = fade->to;
     brightness_from = fade->from;
-    promote_lock(intent, priority, policy, endTime);
-    return rezult;
+    promote_lock(active, pending);
+    break;
   }
   default:
     return ExecuteResult::UNSUPPORTED_ACTION;
   }
+  return rezult;
 }
 
 PinId PIN::get_id() const
@@ -97,14 +119,34 @@ PinId PIN::get_id() const
   // TODO
 }
 
-Lock PIN::get_active_lock() const
+Lock PIN::get_active_lock(ActionType type) const
 {
-  return active_lock;
+  switch (type)
+  {
+  case ActionType::ON:
+  case ActionType::OFF:
+  case ActionType::TOGGLE:
+    return active_power_lock;
+  case ActionType::FADE:
+    return active_brightness_lock;
+  default:
+    return {};
+  }
 }
 
-Lock PIN::get_pending_lock() const
+Lock PIN::get_pending_lock(ActionType type) const
 {
-  return pending_lock;
+  switch (type)
+  {
+  case ActionType::ON:
+  case ActionType::OFF:
+  case ActionType::TOGGLE:
+    return pending_power_lock;
+  case ActionType::FADE:
+    return pending_brightness_lock;
+  default:
+    return {};
+  }
 }
 
 void PIN::begin()
