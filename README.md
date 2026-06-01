@@ -1,4 +1,10 @@
 # MIDCA
+## Target Platform / Платформа
+
+- MCU: ESP32
+- IDE: Visual Studio Code
+- Framework: PlatformIO
+
 > ⚠️ Project status: core system is under active development and not yet stabilized.
 
 MIDCA is an automation system built around the Intent model.
