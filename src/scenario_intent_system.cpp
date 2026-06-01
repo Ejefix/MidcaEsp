@@ -61,7 +61,7 @@ void ScheduledIntentStore::update()
 {
 }
 
-bool ScheduledIntentStore::setState(ScheduledIntentID id, IntentState state, Rezult rezult)
+bool ScheduledIntentStore::setState(ScheduledIntentID id, IntentState state, ExecuteMeta rezult)
 {
     auto it = store.find(id);
 
@@ -70,7 +70,8 @@ bool ScheduledIntentStore::setState(ScheduledIntentID id, IntentState state, Rez
         if (it->second.state == IntentState::FAILED ||
             it->second.state == IntentState::STOP ||
             it->second.state == IntentState::DONE ||
-            it->second.state == IntentState::TO_DELETE)
+            it->second.state == IntentState::TO_DELETE ||
+            it->second.state == IntentState::FAILED_TIMEOUT)
         {
             return false;
         }
@@ -87,9 +88,11 @@ bool ScheduledIntentStore::setState(ScheduledIntentID id, IntentState state, Rez
             //     Serial.println(" установлен статус RUNNING");
             running.emplace(id);
             break;
+        case IntentState::RETRY_RUNNING:
+            //     Serial.println(" установлен статус RETRY_RUNNING");
+            break;
         case IntentState::RUNNING_ACTIVE:
-            //     Serial.println(" установлен статус RUNNING");
-            running.erase(id);
+            //     Serial.println(" установлен статус RUNNING_ACTIVE");
             break;
         case IntentState::PAUSED:
             //    Serial.println(" установлен статус PAUSED");
@@ -99,6 +102,7 @@ bool ScheduledIntentStore::setState(ScheduledIntentID id, IntentState state, Rez
             running.erase(id);
             //    Serial.println(" установлен статус STOP");
             break;
+        case IntentState::FAILED_TIMEOUT:
         case IntentState::DONE:
         {
             it->second.executedAt = myclock.getEpochMillis();
@@ -153,16 +157,13 @@ bool ScheduledIntentStore::extend(const ScheduledIntentID &id, timeMS time)
         case IntentState::RUNNING:
         case IntentState::PAUSED:
         case IntentState::RUNNING_ACTIVE:
-            if (setState(id, IntentState::ACTIVE)) // запускаем опять в обработку
-            {
-                Serial.print("[ScheduledIntentStore] Намериние ScheduledIntentID ");
-                Serial.print(id);
-                Serial.println(" успешно обновил время дейсвия");
-                it->second.updatedAt = myclock.getEpochMillis();
-                it->second.schedule.endTime = time;
-                return true;
-            }
-            return false;
+        case IntentState::RETRY_RUNNING:
+            Serial.print("[ScheduledIntentStore] Намериние ScheduledIntentID ");
+            Serial.print(id);
+            Serial.println(" успешно обновил время дейсвия");
+            it->second.updatedAt = myclock.getEpochMillis();
+            it->second.schedule.endTime = time;
+            return true;
         default:
             Serial.print("[ScheduledIntentStore] Намериние ScheduledIntentID ");
             Serial.print(id);
@@ -254,7 +255,7 @@ void ScheduledIntentStore::clear()
 
 void ScheduledIntentStore::printI()
 {
-    for(auto it = store.begin(); it != store.end();++it)
+    for (auto it = store.begin(); it != store.end(); ++it)
     {
         it->second.printF();
     }
@@ -367,7 +368,7 @@ void ScheduledIntent::printF() const
     Serial.print("ExecutedAt: ");
     Serial.println(executedAt); // время выполнения
 
-    Serial.print("Rezult: ");
+    Serial.print("ExecuteResult: ");
 
     switch (rezult.rezult)
     {
@@ -403,8 +404,38 @@ void ScheduledIntent::printF() const
         Serial.println("UNKNOWN");
         break;
     }
+    Serial.print("IntentFailArbitrator: ");
+    switch (rezult.reason)
+    {
+    case IntentFailArbitrator::NONE:
+        Serial.println("NONE");
+        break;
+
+    case IntentFailArbitrator::TIME_EXPIRED_BEFORE_FIRST_RUN:
+        Serial.println("время жизни intent истекло до первой попытки выполнения");
+        break;
+
+    case IntentFailArbitrator::TIME_EXPIRED_AFTER_ATTEMPTS:
+        Serial.println("intent уже пытался выполняться , но время жизни intent истекло");
+        break;
+
+    case IntentFailArbitrator::BLOCKED_BY_OTHER_INTENT:
+        Serial.println("не выполнен из-за блокировки другим intent (конфликт приоритетов)");
+        break;
+
+    case IntentFailArbitrator::OVERRIDE_EQUAL_PRIORITY:
+        Serial.println("заменил intent равного приоритета");
+        break;
+
+    case IntentFailArbitrator::UNSUPPORTED_ACTION:
+        Serial.println("отсутствует драйвер");
+        break;
+    default:
+        Serial.println("UNKNOWN");
+        break;
+    }
     Serial.print("blockingIntentID: ");
     Serial.println(rezult.blockingIntentID);       // время выполнения
     Serial.println("==========================="); // конец блока
-    delay(1000); // пауза 200 мс
+    delay(1000);                                   // пауза 200 мс
 }

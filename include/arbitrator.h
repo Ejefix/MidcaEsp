@@ -20,6 +20,6 @@ private:
      * Остальные не выбираются как исполнитель.
      */
     void beginPINtarget(const std::vector<ScheduledIntentID> &vec) const;
-
-    timeMS time{};
+    bool resolve_lifecycle(const ScheduledIntent *candidate)const;
+   
 };
