@@ -1,7 +1,9 @@
 #include "globals.h"
 #include <Wire.h>
+#include <scenario_intent_system.h>
 
 MyWiFi wifi{};
+Config configG{};
 CLOCK myclock{};
 Internet inet{&myclock};
 std::vector<Adafruit_MCP23X17 *> mcpG{};
@@ -9,6 +11,9 @@ const std::pair<int, int> wire_pair{4, 5};
 
 DeviceRegistry *device_registry{new DeviceRegistry{}};
 DeviceBinder * device_binder{new DeviceBinder {}};
+ScheduledIntentStore *store{new ScheduledIntentStore{}};
+Arbitrator * scheduler{new Arbitrator{*store}};
+IntentExecutor *intent_executor{new IntentExecutor{}}; 
 bool updateDATA{false};
 
 
@@ -17,7 +22,7 @@ bool updateDATA{false};
 
 const std::array<int, 15> ESP_GPIO{12, 13, 14, 19, 16, 17, 18, 21, 22, 23, 25, 26, 27, 32, 33};
 std::vector<std::array<IGpioPin *, 16>> gpioSignal{};
-#if FW_BUILD == FW_R
+#if FW_BUILD == FW_RELAY
 const std::array<IPinDriver *, 15> PinDriver{
     new RelayDriver{ESP_GPIO[0]},
     new RelayDriver{ESP_GPIO[1]},
@@ -38,21 +43,21 @@ const std::array<IPinDriver *, 15> PinDriver{
 
 #elif FW_BUILD == FW_PWM
 const std::array<IPinDriver *, 15> PinDriver{
-    new PWMDriver{GPIO[0]},
-    new PWMDriver{GPIO[1]},
-    new PWMDriver{GPIO[2]},
-    new PWMDriver{GPIO[3]},
-    new PWMDriver{GPIO[4]},
-    new PWMDriver{GPIO[5]},
-    new PWMDriver{GPIO[6]},
-    new PWMDriver{GPIO[7]},
-    new PWMDriver{GPIO[8]},
-    new PWMDriver{GPIO[9]},
-    new PWMDriver{GPIO[10]},
-    new PWMDriver{GPIO[11]},
-    new PWMDriver{GPIO[12]},
-    new PWMDriver{GPIO[13]},
-    new PWMDriver{GPIO[14]},
+    new PWMDriver{ESP_GPIO[0]},
+    new PWMDriver{ESP_GPIO[1]},
+    new PWMDriver{ESP_GPIO[3]},
+    new PWMDriver{ESP_GPIO[4]},
+    new PWMDriver{ESP_GPIO[5]},
+    new PWMDriver{ESP_GPIO[6]},
+    new PWMDriver{ESP_GPIO[7]},
+    new PWMDriver{ESP_GPIO[8]},
+    new PWMDriver{ESP_GPIO[9]},
+    new PWMDriver{ESP_GPIO[10]},
+    new PWMDriver{ESP_GPIO[11]},
+    new PWMDriver{ESP_GPIO[12]},
+    new PWMDriver{ESP_GPIO[13]},
+    new PWMDriver{ESP_GPIO[14]},
+    new PWMDriver{ESP_GPIO[15]},
 };
 #else
 #error "Unknown firmware build"
@@ -124,8 +129,8 @@ void setupStart()
   }
   for (size_t i{}; i < pinsG.size(); ++i)
   {
-    pinsG[i]->load();
-    pinsG[i]->default_on();
+    //pinsG[i]->load();
+    
   }
 }
 

@@ -144,6 +144,10 @@ void SENSOR::set_interval(const unsigned long &time_off)
   save();
    SENSOR::changed_flags = true;
 }
+unsigned long SENSOR::get_interval() const
+{
+    return this->time_off_;
+}
 bool SENSOR::get_activ()
 {
 

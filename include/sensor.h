@@ -13,6 +13,7 @@ public:
   DeviceType type()override;  
   void push_script_time(const std::pair<unsigned long long, unsigned long long> &time);
   void set_interval(const unsigned long &time_off);
+  unsigned long get_interval()const ;
   void set_status(bool act);
   unsigned int get_id() const;
   void fill_json(JsonArray &arr) const;

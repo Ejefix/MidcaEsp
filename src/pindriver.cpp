@@ -23,11 +23,11 @@ bool RelayDriver::write(bool on, uint8_t)
     {
         digitalWrite(pin, HIGH);
     }
-    Serial.print("[INF] записали в  ");
-    Serial.print(" пин ");
-    Serial.print(pin);
-    Serial.print(" состояние ");
-    Serial.println(state);
+   // Serial.print("[INF] записали в  ");
+   // Serial.print(" пин ");
+  //  Serial.print(pin);
+   // Serial.print(" состояние ");
+  //  Serial.println(state);
     return true;
 }
 

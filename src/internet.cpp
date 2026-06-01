@@ -391,22 +391,15 @@ int Internet::process_cmd(String &decrypted)
     Serial.println("[INF] Ping <-> Pong");
     return 0;
   }
-#if FW_BUILD == FW_RELAY
+
   if (comm == Skeleton::pir)
   {
-    err = comEx.playPIR(decrypted);
-    if (err == 0)
-    {
-      PIR_SENSOR::changed_flags = true;
-    }
+    err = comEx.playSensor(decrypted);
+   
     return err;
   }
-  if (comm == Skeleton::sm)
-  {
-    err = comEx.playSM(decrypted);
-    return err;
-  }
-#endif
+  
+
   if (comm == Skeleton::status_full)
   {
     return Skeleton::status_full;

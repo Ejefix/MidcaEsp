@@ -46,7 +46,30 @@ void setup()
 }
 
 String cmd;
+void printRAM()
+{
+  Serial.println("=== RAM REPORT ===");
 
+  Serial.print("Free heap: ");
+  Serial.println(ESP.getFreeHeap());
+
+  Serial.print("Min free heap: ");
+  Serial.println(ESP.getMinFreeHeap());
+
+  Serial.print("Heap size: ");
+  Serial.println(ESP.getHeapSize());
+
+  Serial.print("Largest block: ");
+  Serial.println(heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
+
+  Serial.print("Free internal RAM: ");
+  Serial.println(heap_caps_get_free_size(MALLOC_CAP_INTERNAL));
+
+  Serial.print("Largest internal block: ");
+  Serial.println(heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL));
+
+  Serial.println("=================");
+}
 void loop()
 {
 
@@ -61,50 +84,69 @@ void loop()
 
       if (cmd == "1")
       {
-        for (int i{}; i < 100; ++i)
-        {
-          device_registry->set_type(DeviceType::Sensor, i);
-        }
+        store->printI();
       }
 
       if (cmd == "2")
       {
-        for (int i{}; i < 100; ++i)
+        for (size_t i{}; i < pinsG.size(); ++i)
         {
-          device_registry->set_type(DeviceType::Switch, i);
+
+          if (i % 2 == 0)
+          {
+            ScheduledIntent intent{};
+            intent.intent.targetID = TargetRef::make(TargetType::PIN, pinsG[i]->get_id());
+            intent.intent.type = ActionType::ON;
+            intent.source = IntentSource::USER;
+            intent.createdAt = myclock.getEpochMillis();
+            store->add(intent);
+          }
         }
       }
       if (cmd == "3")
       {
-        for (int i{}; i < 100; ++i)
+        for (int z{}; z < 10; ++z)
         {
-          device_registry->set_type(DeviceType::Button, i);
+          for (size_t i{}; i < pinsG.size(); ++i)
+          {
+
+            ScheduledIntent intent{};
+            intent.intent.targetID = TargetRef::make(TargetType::PIN, pinsG[i]->get_id());
+            intent.intent.type = ActionType::TOGGLE;
+            intent.source = IntentSource::USER;
+            intent.createdAt = myclock.getEpochMillis();
+            store->add(intent);
+          }
         }
       }
       if (cmd == "4")
       {
         for (size_t i{}; i < pinsG.size(); ++i)
         {
-          for (int z{}; z < 100; ++z)
-          {
-            pinsG[i]->remove_device(z);
-          }
+
+          ScheduledIntent intent{};
+          intent.intent.targetID = TargetRef::make(TargetType::PIN, pinsG[i]->get_id());
+          intent.intent.type = ActionType::OFF;
+          intent.source = IntentSource::USER;
+          intent.createdAt = myclock.getEpochMillis();
+          store->add(intent);
         }
       }
       if (cmd == "5")
       {
-        for (size_t i{}; i < pinsG.size(); ++i)
-        {
-          for (int z{}; z < 100; ++z)
-          {
-            pinsG[i]->add_device(z, false);
-          }
-        }
+        printRAM();
+        Serial.print("[INFO] размер магазина ");
+        Serial.print(store->size());
+        Serial.println(" намериний");
       }
 
-      if (cmd == "err")
+      if (cmd == "6")
       {
-        Serial.println("[OK] команда принята");
+        store->clear();
+        printRAM();
+        Serial.print("[INFO] размер магазина ");
+        Serial.print(store->size());
+        Serial.println(" намериний");
       }
 
       cmd = ""; // очистить буфер
@@ -120,19 +162,21 @@ void loop()
   wifi.maintain();                                  //???????????????????????????????????
   myclock.loop();
   {
-    
+
     device_binder->begin();
+    scheduler->begin();
+    intent_executor->begin();
     for (size_t i{}; i < pinsG.size(); ++i)
     {
       pinsG[i]->begin();
     }
   }
-  if(PIN::changed_flags || SENSOR::changed_flags || DeviceRegistry::changed_flags)
+  if (PIN::changed_flags || SENSOR::changed_flags || DeviceRegistry::changed_flags)
   {
-    PIN::changed_flags = false;
-    SENSOR::changed_flags = false;
-    DeviceRegistry::changed_flags = false;
-    updateDATA = true;
+    // PIN::changed_flags = false;
+    // SENSOR::changed_flags = false;
+    // DeviceRegistry::changed_flags = false;
+    // updateDATA = true;
   }
   vTaskDelay(2);
 }

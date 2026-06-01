@@ -10,10 +10,10 @@ public:
     int begin(const String &packet) const;
     int playPIN(const String &packet, int pinNumber) const;
 #if FW_BUILD == FW_RELAY
-    int playPIR(const String &packet) const;
-    int playSM(const String &packet) const;
+    int playSensor(const String &packet) const;
+    
 #endif
     String full_status_json() const;
 };
- 
+  
 #endif // COMMANDEXECUTOR_H

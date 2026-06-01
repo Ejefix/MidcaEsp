@@ -3,13 +3,13 @@
 
 #include <Arduino.h>
 #include <time.h>
-
+using timeMS = uint64_t;
 class CLOCK {
 public:
     CLOCK();                        // конструктор
     bool begin();                    // запуск синхронизации
     void loop();                     // проверка и обновление времени (вызывать в loop)
-    unsigned long long getEpochMillis();
+    timeMS getEpochMillis();
     unsigned long long getEpoch_hash();
 
 private:
@@ -17,10 +17,10 @@ private:
     void addMilliseconds(unsigned long long ms);
     bool syncTime();                 // принудительная синхронизация с NTP
 
-    unsigned long long lastSyncMillis{};    // когда последний раз синхронизировались
-    unsigned long long lastMillis{};
-    unsigned long long syncInterval{}; 
-    unsigned long long timeEPS{};           // хранит последнее синхронизированное время
+    timeMS lastSyncMillis{};    // когда последний раз синхронизировались
+    timeMS lastMillis{};
+    timeMS syncInterval{}; 
+    timeMS timeEPS{};           // хранит последнее синхронизированное время
     
 };
 

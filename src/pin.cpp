@@ -4,9 +4,8 @@
 #include "setupesp.h"
 #include "globals.h"
 
-
 bool PIN::changed_flags{false};
-unsigned int PIN::id_pin{3001};
+PinId PIN::id_pin{3001};
 
 PIN::PIN(IPinDriver *pin_driver_) : pin_driver(pin_driver_), id{id_pin}
 {
@@ -14,47 +13,6 @@ PIN::PIN(IPinDriver *pin_driver_) : pin_driver(pin_driver_), id{id_pin}
 }
 void PIN::load()
 {
-  Serial.print("[PIN] Загрузка данных PIN id -> ");
-  Serial.println(id);
-  deviceID.clear();
-  String path = "/pin" + String(id);
-
-  File file = SPIFFS.open(path, FILE_READ); // открываем файл на чтение
-  if (!file)
-  { // проверка открытия
-    Serial.println("[ERR] файл не найден");
-    return;
-  }
-  JsonDocument doc{};                                    // документ для JSON
-  DeserializationError err = deserializeJson(doc, file); // читаем JSON
-  file.close();
-  if (err)
-  { // проверка ошибок парсинга
-    Serial.print("[ERR] JSON parse failed: ");
-    Serial.println(err.c_str());
-    Serial.print("file ");
-    Serial.println(path);
-    return;
-  }
-  JsonArray arr = doc["pin"].as<JsonArray>();
-  if (arr.isNull() || arr.size() == 0)
-    return;
-  JsonObject obj = arr[0]; // первый объект в массиве
-  pin_info = obj["status"];
-
-  JsonArray deviceArr = obj["deviceID"].as<JsonArray>();
-  if (deviceArr.size() == 0)
-  {
-    Serial.println("[PIN] Нету девайсов для добавления"); // лог
-  }
-  for (uint16_t id : deviceArr)
-  {
-    if (!add_device(id, false))
-    {
-      Serial.print("[PIN] Не смогли добавить девайс"); // лог
-      Serial.println(id);
-    }
-  }
 }
 void PIN::save() const
 {
@@ -73,199 +31,88 @@ void PIN::save() const
   Serial.println(path);
 }
 
-bool PIN::get_user_on() const
-{
-  return pin_info & FLAG_USER_ON;
-}
-bool PIN::isPinActivation(const unsigned long long &time)
+ExecuteResult PIN::executor(const ScheduledIntent &intent, uint8_t priority, LockPolicyType policy, timeMS endTime)
 {
 
-  unsigned long time_now = millis();
-
-  if (pin_info & FLAG_USER_ON)
+  if (!pin_driver)
+    return ExecuteResult::DRIVER_NOT_FOUND;
+  ExecuteResult rezult{};
+  if (check_lock(active_lock))
   {
-    return true;
-  }
-
-  if (pin_info & FLAG_USER_OFF)
-  {
-    return false;
-  }
-  if (pin_info & FLAG_SCRIPT)
-  { // проверка сценариев
-    
-    if (pin_info & FLAG_SENSOR)
+    if (priority > active_lock.priority)
     {
-      return true;
+      rezult = ExecuteResult::OVERRIDE_LOWER_PRIORITY;
     }
-  }
-
-  //
-
-  return false;
-}
-void PIN::set_status_user(unsigned char pin_info_, bool save_)
-{
-  pin_info &= ~(FLAG_USER_ON | FLAG_USER_OFF | FLAG_SCRIPT);
-  pin_info |= (pin_info_ & (FLAG_USER_ON | FLAG_USER_OFF | FLAG_SCRIPT));
-  changed_flags = true;
-  if (save_)
-  {
-    // save();
-  }
-}
-void PIN::set_status_pin(bool status)
-{
-
-  if (status != (pin_info & FLAG_STATUS_PIN))
-  {
-    Serial.print("[LOG] новый статус PIN id -> ");
-    Serial.print(id);
-    Serial.print(" ");
-    Serial.println(status);
-    changed_flags = true;
-    pin_info ^= FLAG_STATUS_PIN;
-  }
-}
-void PIN::event(const std::vector<Event> &events)
-{
-  bool sensor{false};
-  for (auto it = events.begin(); it != events.end(); ++it)
-  {
-    if (it->type == DeviceType::Switch || it->type == DeviceType::Button)
+    else if (priority == active_lock.priority)
     {
-      handleEvent(it->event);
-      continue;
+      rezult = ExecuteResult::OVERRIDE_EQUAL_PRIORITY;
     }
-    if (it->type == DeviceType::Sensor &&
-        (it->event == InputEvent::RisingEdge || it->event == InputEvent::HighLevel))
+    else
     {
-      sensor = true;
-    }
-  }
-  if (sensor)
-  {
-    if (!(pin_info & FLAG_SENSOR))
-    {
-      pin_info |= FLAG_SENSOR;
-      changed_flags = true;
+      return ExecuteResult::BLOCKED_BY_HIGHER_PRIORITY;
     }
   }
   else
   {
-    if (pin_info & FLAG_SENSOR)
-    {
-      pin_info &= ~FLAG_SENSOR;
-      changed_flags = true;
-    }
+    rezult = ExecuteResult::SUCCESS;
   }
-}
-void PIN::handleEvent(InputEvent ev)
-{
-  switch (ev)
+  auto promote_lock = [this](const ScheduledIntent &intent, uint8_t priority, LockPolicyType policy, timeMS endTime)
   {
-  case InputEvent::NoEventErr:
-    break;
-  case InputEvent::NoEvent:
-    break;
-  case InputEvent::RisingEdge:
-    break;
-  case InputEvent::FallingEdge:
-    break;
-  case InputEvent::HighLevel:
-    break;
-  case InputEvent::LowLevel:
-    break;
-  case InputEvent::Toggle:
-    pin_info ^= FLAG_USER_ON;
-    break;
-  case InputEvent::LongPress:
-    pin_info &= ~FLAG_USER_OFF;
-    pin_info &= ~FLAG_USER_ON;
-    pin_info |= FLAG_SCRIPT;
-    break;
-  case InputEvent::DoubleClick:
-    pin_info |= FLAG_USER_ON;
-    break;
+    pending_lock = active_lock;
+    active_lock = Lock{priority, intent.source, intent.id, policy, endTime};
+  };
+  switch (intent.intent.type)
+  {
+  case ActionType::ON:
+    activPIN = true;
+    promote_lock(intent, priority, policy, endTime);
+    return rezult;
+  case ActionType::OFF:
+    activPIN = false;
+    promote_lock(intent, priority, policy, endTime);
+    return rezult;
+  case ActionType::TOGGLE:
+    activPIN = !activPIN;
+    promote_lock(intent, priority, policy, endTime);
+    return rezult;
+  case ActionType::FADE:
+  {
+    auto fade = std::get_if<FadePayload>(&intent.intent.payload);
+    if (!fade)
+      return ExecuteResult::INVALID_PAYLOAD;
+    timeFADE = fade->durationMs;
+    brightness_to = fade->to;
+    brightness_from = fade->from;
+    promote_lock(intent, priority, policy, endTime);
+    return rezult;
+  }
+  default:
+    return ExecuteResult::UNSUPPORTED_ACTION;
   }
 }
-unsigned int PIN::get_id() const
+
+PinId PIN::get_id() const
 {
   return id;
   // TODO
 }
 
-bool PIN::add_device(DeviceId idDev, bool saved)
+Lock PIN::get_active_lock() const
 {
-  if (!device_registry->exists(idDev))
-    return false;
-
-  device_binder->connect(idDev, this);
-
-  deviceID.emplace(idDev);
-  if (saved)
-  {
-    save();
-    PIN::changed_flags = true;
-  }
-  Serial.print("[PIN] id : ");
-  Serial.print(this->id);
-  Serial.print(" добавил девайс id  -> ");
-  Serial.println(idDev);
-  return true;
+  return active_lock;
 }
 
-void PIN::remove_device(DeviceId idDev)
+Lock PIN::get_pending_lock() const
 {
-  if (deviceID.find(idDev) == deviceID.end())
-  {
-    return;
-  }
-  device_binder->disconnect(idDev, this);
-  deviceID.erase(idDev);
-  save();
-  PIN::changed_flags = true;
-  Serial.print("[PIN] id : ");
-  Serial.print(this->id);
-  Serial.print(" удалил девайс id  -> ");
-  Serial.println(idDev);
+  return pending_lock;
 }
 
-void PIN::set_user_on(bool status)
-{
-  if (status)
-  {
-    pin_info |= FLAG_USER_ON;
-  }
-  else
-  {
-    time_delay = millis();
-    pin_info &= ~FLAG_USER_ON;
-  }
-  // save();
-}
 void PIN::begin()
 {
-  bool activ = isPinActivation(myclock.getEpochMillis());
-  if (defaultSetup)
-  {
-    pin_info = 0;
-    activ = false;
-    if (millis() - counter_default > 15000)
-    {
-      defaultSetup = false;
-    }
-  }
-  if (pin_driver)
-  {
-    if (pin_driver->write(activ, brightness))
-      set_status_pin(activ);
-  }
-}
-void PIN::default_on()
-{
-  counter_default = millis();
-  defaultSetup = true;
+
+  if (!pin_driver)
+    return;
+  pin_driver->write(activPIN, brightness);
 }
 
 void PIN::fill_json(JsonArray &arr) const
@@ -285,24 +132,22 @@ void PIN::fill_json(JsonArray &arr) const
   if (caps & DriverCaps::RGB)
     capsArr.add("rgb");
 
-  obj["id"] = id;       // идентификатор пина
-  obj["status"] = pin_info; // текущее состояние
+  obj["id"] = id;           // идентификатор пина
+  obj["status"] = activPIN; // текущее состояние
 
   obj["brightness"] = brightness;
-  
-  {
-    JsonArray deviceArr = obj["deviceID"].to<JsonArray>();
-    for (uint16_t id : deviceID) // перебираем set
-    {
-      deviceArr.add(id); // добавляем каждый ID
-    }
-  }
+  obj["to"] = brightness_to;
+  obj["from"] = brightness_from;
 }
-void PIN::set_brightness(int brightness_)
+
+bool PIN::check_lock(const Lock &lock) const
 {
-  if (brightness_ != this->brightness)
-  {
-    this->brightness = brightness_;
-    PIN::changed_flags = true;
-  }
+  auto time = myclock.getEpochMillis();
+  if (lock.policy == LockPolicyType::INFINITE || lock.endTime >= time)
+    return true;
+  return false;
+}
+
+Lock::Lock(uint8_t priority_, IntentSource src, ScheduledIntentID i, LockPolicyType pol, timeMS end) : priority(priority_), endTime(end), source(src), id(i), policy(pol)
+{
 }

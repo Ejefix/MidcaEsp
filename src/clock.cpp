@@ -66,7 +66,8 @@ bool CLOCK::syncTime() {
 void CLOCK::addMilliseconds(unsigned long long ms) {
   timeEPS += ms;
 }
-unsigned long long CLOCK::getEpochMillis() {
+// текущее времяя в Millis
+timeMS CLOCK::getEpochMillis() {
   loop();
   return timeEPS;  // возвращаем результат
 }

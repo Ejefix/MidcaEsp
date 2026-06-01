@@ -44,7 +44,7 @@ bool MyWiFi::begin() {
         Serial.print("[LOG] IP: "); Serial.println(WiFi.localIP());
         if(!MDNS.begin(local_MDNS))
           {
-            Serial.println("mDNS error");
+            Serial.println("mDNS error"); 
           }
         return true;
     } else {

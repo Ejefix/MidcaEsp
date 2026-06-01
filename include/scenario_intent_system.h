@@ -1,110 +1,221 @@
 #pragma once
 #include <vector>
-#include <map>
-#include "variant"
+#include <unordered_set>
+#include <unordered_map>
+#include <variant>
+// содержит индефикатор типа и его id
+using TargetRefID = uint32_t;
+using timeMS = uint64_t;
+using ScheduledIntentID = uint16_t;
+
+// текущий статус намериния, его состояние
 enum class IntentState
 {
-    ACTIVE,   // работает нормально
-    PAUSED,   // временно остановлен
-    DISABLED, // полностью выключен логикой системы
-    DONE      // выполнен (для ONESHOT)
+    // CREATED, // намерение создано , но еще не обрабатывалось
+
+    ACTIVE, // намерение активно и ожидает выполнения
+
+    RUNNING, // выполнить
+
+    RUNNING_ACTIVE, // намериние уже выполняется и ждет завершения
+
+    PAUSED, // выполнение временно приостановлено
+
+    STOP, // намерение полностью отключено системой/логикой
+
+    DONE, // намерение успешно выполнено
+
+    FAILED, // выполнение завершилось ошибкой
+
+    TO_DELETE // готово для удаления
+};
+enum class ExecuteResult : uint8_t
+{
+
+    SUCCESS, //
+
+    OVERRIDE_EQUAL_PRIORITY, // заменил intent равного приоритета
+
+    OVERRIDE_LOWER_PRIORITY, // вытеснил более слабый intent
+
+    BLOCKED_BY_HIGHER_PRIORITY, // заблокирован более сильным intent
+
+    INVALID_PAYLOAD, // payload не соответствует ActionType
+
+    DRIVER_NOT_FOUND, // отсутствует драйвер
+
+    UNSUPPORTED_ACTION // действие не поддерживается
 };
 
+// информация - что конкретно мы должны сделать
 enum class ActionType
 {
-    ON,  // включить пин/устройство
-    OFF, // выключить пин/устройство
+    ON,     // включить пин/устройство
+    OFF,    // выключить пин/устройство
+    TOGGLE, // инвертировать состояние
+    FADE,   // плавно изменить яркость за время
+    DISCONNECT,
 
-    DIM,  // установить яркость/мощность
-    FADE, // плавно изменить яркость за время
-
-    PUSH_SCENARIO,
-    CLEAR_SCENARIO,
+    PUSH,
+    CLEAR,
+    CONNECT,
 
     DISABLE, // временно запретить выполнение (блокировка логики)
     ENABLE   // снять запрет, восстановить выполнение правил
 };
-
+// жизненный цикл события
 enum class LifetimeType
 {
     ONESHOT, // событие выполняется один раз и удаляется после срабатывания
-    REPEAT // событие выполняется каждый день/по расписанию 
+    REPEAT   // событие выполняется каждый день/по расписанию
 };
 
+/*
+информация о том , кто должен исполнить событие.
+если событие применяется к  событию,
+то оно должно  исполнятся всегда,
+если цель создана не  IntentSource::SYSTEM
+*/
 enum class TargetType
 {
-    PIN,   // физический исполнитель
-    DEVICE // источник событий (железо)
+    PIN,    // физический исполнитель
+    DEVICE, // источник событий (железо)
+    INTENT  // намериние ScheduledIntent
 };
 
-
-struct DimPayload
-{
-    uint8_t value; // целевая яркость (0–255)
-};
+// настройки плавного увеличения яркости
 struct FadePayload
 {
-    std::optional<uint8_t> from; // стартовая яркость
-    std::optional<uint8_t> to; // конечная яркость
-    std::optional<uint32_t> durationMs; // время перехода 
+    uint8_t from{};        // стартовая яркость
+    uint8_t to{};          // конечная яркость
+    uint32_t durationMs{}; // время перехода
+};
+// создать коннект
+struct ConnectPayload
+{
+    uint32_t obj{}; // ID
 };
 
-struct TargetRef {
-    TargetType type{};
-    uint16_t id{};
+/*
+извлечение данных из TargetRefID
+получить  конкретный тип TargetType getType()
+получить его id getId()
+*/
+struct TargetRef
+{
+    static uint32_t make(TargetType type, uint16_t id);
+    static TargetType getType(const TargetRefID &value);
+    static uint16_t getId(const TargetRefID &value);
+};
+// кто создал намериние
+enum class IntentSource
+{
+    IntentDEFAULT,
+    SENSOR,   // создал датчик
+    SCENARIO, // создал сценарий
+    USER,     // создал пользователь
+    SYSTEM    // системное намерение
 };
 
+// уровень важности события
+enum class IntentUrgency
+{
+    NORMAL,
+    INCREASED,
+    CRITICAL,
+    EMERGENCY
+};
+
+/*
+содержит необходимые данные для выполнения действия
+DimPayload содержет целевую яркость
+FadePayload содержит данные о плавности набора яркости
+*/
 using IntentPayload = std::variant<
-    std::monostate,   // пустой payload (для действий без параметров: ON / OFF / ENABLE / DISABLE)
+    std::monostate, // пустой payload (для действий без параметров: ON / OFF / ENABLE / DISABLE)
 
-    DimPayload,       // установка фиксированной яркости 
+    FadePayload, // плавное изменение значения (from → to за duration)
 
-    FadePayload      // плавное изменение значения (from → to за duration)
->;
+    ConnectPayload // создание коннекта
+    >;
 // структура намериний, что мы хотим
 struct Intent
 {
-    TargetRef target{};     // от кого хотим  
-    ActionType type{};    // что хотим
-    
-    IntentPayload payload{}; // действия намериния 
-};
+    // от кого хотим, содеражит в себе данные о типе и его id
+    // TargetRef::
+    TargetRefID targetID{};
+    ActionType type{}; // что сделать
 
+    IntentPayload payload{}; // данные необходимые для выполнения
+};
 // время когда выполнять намериние
 struct Schedule
 {
-    uint64_t startTime;
-    uint64_t endTime; 
+    timeMS startTime{};
+    timeMS endTime{};
+    bool operator==(const Schedule &other) const;
+};
+
+struct Rezult
+{
+    ExecuteResult rezult{};
+    ScheduledIntentID blockingIntentID{};
 };
 
 struct ScheduledIntent
 {
-    Intent intent{};
-    Schedule schedule{};
-    LifetimeType life{}; // время жизни
-    IntentState state{}; // текущий статус
-};
+    Intent intent{};         // что сделать
+    Schedule schedule{};     // когда выполнять
+    LifetimeType life{};     // одноразовое или повторяемое
+    IntentSource source{};   // кто создал
+    IntentState state{};     // текущее состояние
+    IntentUrgency urgency{}; // насколько важно
+    timeMS createdAt{};      // когда создано
+    timeMS executedAt{};     // когда выполнено
+    timeMS updatedAt{};      // последнее изменение
 
+    ScheduledIntentID id{};
+    Rezult rezult{};
+    void printF()const;
+};
 
 // отвечает за добавление и удаление намериний
-class IntentStore
+class ScheduledIntentStore
 {
 public:
-    void add(Intent &intent); // добавить намерение
-    void remove(uint64_t id); // удалить по id
-    const std::map<uint64_t, Intent> &IntentStore::all() const;
+    ScheduledIntentStore();
 
+    // сорируется при вставке
+    // если priority одинаковый
+    // более новый intent выигрывает
+    ScheduledIntentID add(ScheduledIntent &intent); // добавить намерение
+    void update();                                  // обновить состояние  магазина
+    bool setState(ScheduledIntentID id, IntentState state, Rezult rezult = Rezult{});
+    // продлевает время жизни
+    bool extend(const ScheduledIntentID &id, timeMS time);
+    // может вернуть nullptr
+    const ScheduledIntent *get(ScheduledIntentID id) const;
+    // цель и отсортированный ( по Priority от min -> max ) вектор ID
+    const std::unordered_map<TargetRefID, std::vector<ScheduledIntentID>> &all() const;
+    std::unordered_set<ScheduledIntentID> get_running() const;
+    // получает приоритет события, на основе кто создал и уровня важности события
+    uint8_t resolvePriority(const IntentSource &source, const IntentUrgency &urgency) const;
+    size_t size() const;
+    void clear();
+    void printI();
 private:
-    std::map<uint64_t, Intent> data;
-    uint64_t nextId{1};
-};
+    std::unordered_map<ScheduledIntentID, ScheduledIntent> store{};
 
-// обрабатывает намериния пользователя
-class Scheduler
-{
-public:
-    void update();
+    /*
+    ключ - кто цель исполнения
+    vector id отсортирован по Priority
+    std::vector<ScheduledIntentID> - что для него будет сделано
+    */
+    std::unordered_map<TargetRefID, std::vector<ScheduledIntentID>> scheduler{};
 
-private:
-    IntentStore *store{};
+    std::unordered_set<ScheduledIntentID> running{};
+    // вставка события для его выполнения
+    void push_running(const ScheduledIntentID &id);
+
+    ScheduledIntentID nextId{1};
 };

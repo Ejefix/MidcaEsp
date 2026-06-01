@@ -7,12 +7,6 @@
 using DeviceId = uint32_t;
 
 
-struct Event
-{
-    DeviceId id; // кто отправил
-    DeviceType type;
-    InputEvent event;
-};
 
 
 class DeviceFactory
@@ -51,22 +45,24 @@ private:
     const String path{"/devices.json"};
 };
 
-class PIN;
+using PinId = uint16_t; 
+using ScheduledIntentID = uint16_t;
 class DeviceBinder
 {
 
 public:
     DeviceBinder();
     // если не смогли создать вернет 0
-    void connect(DeviceId device, PIN *obj);
+    bool connect(DeviceId device, PinId obj);
 
-    void disconnect(DeviceId device, PIN *obj);
+    void disconnect(DeviceId device, PinId obj);
     void disconnect(DeviceId device);
-    void disconnect(PIN *obj);
+    void disconnect(PinId obj);
     void disconnect();
-    void begin() const;
+    void begin() ;
 
 private:
     
-    std::unordered_map<DeviceId, std::vector<PIN *>> data;
+    std::unordered_map<DeviceId, std::vector<std::pair<PinId,ScheduledIntentID>>> data;
+    
 };

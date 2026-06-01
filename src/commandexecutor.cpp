@@ -1,5 +1,6 @@
 #include "commandexecutor.h"
 #include "globals.h"
+#include "sensor.h"
 
 CommandExecutor::CommandExecutor() {}
 
@@ -58,7 +59,7 @@ int CommandExecutor::playPIN(const String &packet, int pinNumber) const
     if (size == 5)
     {
 
-      pinsG[i]->set_status_user(pin_info);
+      
       return 0;
     }
     if (com == Skeleton::brightness)
@@ -71,46 +72,46 @@ int CommandExecutor::playPIN(const String &packet, int pinNumber) const
       }
       Serial.println("[LOG] ----------------------------------------получили->" + packet);
       char *endptr;
-      unsigned long long secondLong = strtoull(second.c_str(), &endptr, 10);
+      int  secondLong = strtoull(second.c_str(), &endptr, 10);
       if (*endptr != '\0')
         return -7;
       Serial.println("[LOG] ----------------------------------------получили яркость для установки ->" + second);
-      pinsG[i]->set_brightness(secondLong);
+      
       return 0;
     }
   }
   return -7;
 }
-#if FW_BUILD == FW_RELAY
-int CommandExecutor::playPIR(const String &packet) const
+
+int CommandExecutor::playSensor(const String &packet) const
 {
   size_t size = packet.length();
   if (size < 12)
     return -3;
   String id = packet.substring(4, 8);
-  PIR_SENSOR *pir{nullptr};
+  unsigned long idSensor = strtoul(id.c_str(), nullptr, 10);
 
-  for (size_t i{}; i < pir_sensorG.size(); ++i)
+  SENSOR *sensor{nullptr};
+
+  if (device_registry->exists(idSensor))
   {
-    if (String(pir_sensorG[i]->get_id()) == id)
-    {
-      pir = pir_sensorG[i];
-      break;
-    }
+    auto dev = device_registry->get(idSensor);
+    sensor = dynamic_cast<SENSOR *>(dev);
   }
-  if (!pir)
+
+  if (!sensor)
   {
     return -4;
   }
   String comm = packet.substring(8, 12);
   if (comm == Skeleton::commands[Skeleton::on])
   {
-    pir->set_status(true); // включить PIR
+    sensor->set_status(true); // включить PIR
     return 0;
   }
   if (comm == Skeleton::commands[Skeleton::off])
   {
-    pir->set_status(false); // выключить PIR
+    sensor->set_status(false); // выключить PIR
     return 0;
   }
   if (comm == Skeleton::commands[Skeleton::time_off])
@@ -125,39 +126,12 @@ int CommandExecutor::playPIR(const String &packet) const
       }
     }
     unsigned long timeOff = strtoul(timeStr.c_str(), nullptr, 10);
-    pir->set_interval(timeOff);
+    sensor->set_interval(timeOff);
     return 0;
   }
   auto pinNumber = packet.substring(12);
   unsigned int id_pin = pinNumber.toInt();
-  if (comm == Skeleton::commands[Skeleton::push])
-  {
-    for (int z{}; z < pinsG.size(); ++z)
-    {
-      unsigned int number = pinsG[z]->get_pinNumber();
-      if (id_pin == number)
-      {
-        pinsG[z]->add_pir_sensor(pir);
-        Serial.print("[INF] Добавили Pir ");
-        Serial.println(id);
-        return 0;
-      }
-    }
-  }
-  if (comm == Skeleton::commands[Skeleton::remove])
-  {
-    for (int z{}; z < pinsG.size(); ++z)
-    {
-      unsigned int number = pinsG[z]->get_pinNumber();
-      if (id_pin == number)
-      {
-        pinsG[z]->remove_pir_sensor(pir);
-        Serial.print("[INF] Удалили Pir ");
-        Serial.println(id);
-        return 0;
-      }
-    }
-  }
+
   if (comm == Skeleton::commands[Skeleton::script_on])
   {
     uint64_t value{};
@@ -170,8 +144,8 @@ int CommandExecutor::playPIR(const String &packet) const
     }
     else
     {
-      pir->push_script_time({0, 0});
-      Serial.println("[INF] Удалили время сценария в Pir ");
+      sensor->push_script_time({0, 0});
+      Serial.println("[INF] Удалили время сценария в sensor ");
       return 0;
     }
 
@@ -180,8 +154,8 @@ int CommandExecutor::playPIR(const String &packet) const
       int start = end + 4;
       auto second = times.substring(start);
       value2 = strtoull(second.c_str(), nullptr, 10);
-      pir->push_script_time({value, value2});
-      Serial.print("[INF] Добавили время сценария в Pir ");
+      sensor->push_script_time({value, value2});
+      Serial.print("[INF] Добавили время сценария в sensor ");
       Serial.print(value);
       Serial.print(" | ");
       Serial.println(value2);
@@ -193,50 +167,6 @@ int CommandExecutor::playPIR(const String &packet) const
   return -8;
 }
 
-int CommandExecutor::playSM(const String &packet) const
-{
-
-  size_t size = packet.length();
-  if (size < 12)
-    return -3;
-  String id = packet.substring(4, 8);
-  SwitchMechanics *sm{nullptr};
-  for (size_t i{}; i < switch_mechanicsG.size(); ++i)
-  {
-    if (String(switch_mechanicsG[i].get_id()) == id)
-    {
-      sm = &switch_mechanicsG[i];
-      break;
-    }
-  }
-  if (!sm)
-  {
-    return -10;
-  }
-  String comm = packet.substring(8, 12);
-  String id_pin = packet.substring(12);
-  unsigned long idPin = strtoul(id_pin.c_str(), nullptr, 10);
-  if (comm == Skeleton::commands[Skeleton::push])
-  {
-    Serial.print("[INF] Добавили к SM ");
-    Serial.print(id);
-    Serial.print(" | реле ");
-    Serial.println(idPin);
-    sm->push_PIN_id(idPin);
-    return 0;
-  }
-  if (comm == Skeleton::commands[Skeleton::remove])
-  {
-    Serial.print("[INF] Удалили от SM ");
-    Serial.print(id);
-    Serial.print(" | реле ");
-    Serial.println(idPin);
-    sm->remove_PIN_id(idPin);
-    return 0;
-  }
-  return -11;
-}
-#endif
 String CommandExecutor::full_status_json() const
 {
   JsonDocument mainDoc{};

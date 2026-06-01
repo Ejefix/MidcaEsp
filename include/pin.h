@@ -8,9 +8,27 @@
 #include "IInputDevice.h"
 #include "sensor.h"
 #include "DeviceFactory.h"
+#include "scenario_intent_system.h"
 
-using PinId = uint32_t;
+using PinId = uint16_t;
 
+enum class LockPolicyType
+{
+  TTL,       // живёт до времени end
+  INFINITE,  // пока не вытеснен
+  EXTENDABLE // продлевается событиями
+};
+
+struct Lock
+{
+  Lock() = default;
+  explicit Lock(uint8_t priority_, IntentSource src, ScheduledIntentID i, LockPolicyType pol, timeMS end);
+  LockPolicyType policy{LockPolicyType::TTL};
+  timeMS endTime{};
+  IntentSource source{IntentSource::IntentDEFAULT};
+  uint8_t priority{};
+  ScheduledIntentID id{};
+};
 class PIN : public Skeleton
 {
 public:
@@ -21,62 +39,41 @@ public:
   explicit PIN(IPinDriver *pin_driver_);
 
   void load();
-  
-
-  void set_status_user(unsigned char pin_info_, bool save_ = true);
-  void begin();
-  void default_on();
   void save() const;
-  unsigned int get_id() const;
+  //------------------------------
 
-  bool add_device(DeviceId idDev, bool saved = true);
-  void remove_device(DeviceId idDev);
+  //------------------------------
+  void begin();
 
-  void set_brightness(int brightness_);
-  bool get_user_on() const;
-  void set_user_on(bool status);
+  PinId get_id() const;
+  Lock get_active_lock() const;
+  Lock get_pending_lock() const;
+  ExecuteResult executor(const ScheduledIntent &intent, uint8_t priority, LockPolicyType policy, timeMS endTime = 0);
+
   static bool changed_flags;
   void fill_json(JsonArray &arr) const;
-  void event(const std::vector<Event> &events);
-  enum PinFlags : unsigned char
-  {
-    FLAG_STATUS_PIN = 1 << 0, // состояние
-    FLAG_USER_ON = 1 << 1,    // вручную включён
-    FLAG_USER_OFF = 1 << 2,   // вручную выключен
-    FLAG_SCRIPT = 1 << 3,     // сценарий активен
-    FLAG_SENSOR = 1 << 4,     // движение (PIR)
-  };
 
 private:
-  static unsigned int id_pin;
+  static PinId id_pin;
+  const PinId id;
   friend CommandExecutor;
-  void set_status_pin(bool status);
-  void handleEvent(InputEvent ev);
-  bool isPinActivation(const unsigned long long &time);
 
-  
+  bool activPIN{false};
 
   //  |=      <— ставим бит в 1
   //  &= ~    <— сбрасываем бит в 0
   //  &       <— проверяем состояние
   // ^=       <- перевернуть бит
-  unsigned char pin_info{FLAG_USER_OFF};
-  unsigned long time_delay{};
-  const unsigned long time_interval{1000};
-  std::set<uint16_t> deviceID{};
+  // unsigned char pin_info{FLAG_USER_OFF};
 
+  bool check_lock(const Lock &lock) const;
   IPinDriver *pin_driver{nullptr};
+  uint8_t brightness_to{0};
+  uint8_t brightness_from{100};
   uint8_t brightness{100};
-
-  const PinId id;
-  bool defaultSetup{false};
-  unsigned long counter_default = millis();
-  
+  uint32_t timeFADE{};
+  Lock active_lock{};  // текущий активный блокирующий intent
+  Lock pending_lock{}; // предыдущий / вытесненный / заменённый
 };
-
-
-
-
-
 
 #endif // PIN_H

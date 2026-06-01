@@ -1,6 +1,7 @@
 #include "DeviceFactory.h"
 #include "globals.h"
 #include "switch433.h"
+#include <scenario_intent_system.h>
 bool DeviceRegistry::changed_flags{false};
 IInputDevice *DeviceFactory::create(uint8_t mcp_id, DeviceType type, uint8_t pin_, uint8_t id)
 {
@@ -207,38 +208,50 @@ DeviceBinder::DeviceBinder()
     data.reserve(20);
 }
 
-void DeviceBinder::connect(DeviceId device, PIN *obj)
+bool DeviceBinder::connect(DeviceId device, PinId obj)
 {
-    if (!obj)
-        return;
-
+    
+    
+    if(TargetRef::getType(device) != TargetType::DEVICE && !device_registry->get(TargetRef::getId(device)))
+    {
+        return false;
+    }
     auto it = data.find(device);
 
     if (it != data.end())
     {
         for (const auto c : it->second)
         {
-            if (c == obj)
-                return;
+            if (c.first == obj)
+                return true; 
         }
     }
-    data[device].push_back(obj); // добавляем connection в список устройства
+    data[device].push_back({obj, 0}); // добавляем connection в список устройства
+    Serial.print("[DeviceBinder] connect создан : DeviceId ");
+    Serial.print(device);
+    Serial.print(", добали PinId ");
+    Serial.println(obj);
+    return true; 
 }
 
-void DeviceBinder::disconnect(DeviceId device, PIN *obj)
+void DeviceBinder::disconnect(DeviceId device, PinId obj)
 {
-    if (!obj)
-        return;
 
     auto it = data.find(device);
     if (it == data.end())
-        return;
+    {
+        Serial.print("[DeviceBinder] connect не найден : DeviceId ");
+        Serial.print(device);
+        Serial.print(" PinId ");
+        Serial.println(obj);
 
+        return;
+    }
     auto &vec = it->second;
 
     for (auto c = vec.begin(); c != vec.end();)
     {
-        if (*c == obj)
+        if (c->first == obj)
             c = vec.erase(c);
         else
             ++c;
@@ -246,15 +259,21 @@ void DeviceBinder::disconnect(DeviceId device, PIN *obj)
 
     if (vec.empty())
         data.erase(it);
+    Serial.print("[DeviceBinder] connect удалён : девайсу id ");
+    Serial.print(device);
+    Serial.print(" ПИН id ");
+    Serial.println(obj);
 }
 
 void DeviceBinder::disconnect(DeviceId device)
 {
+    Serial.print("[DeviceBinder] все connect удалёны: девайсу id ");
+    Serial.println(device);
 
     data.erase(device);
 }
 
-void DeviceBinder::disconnect(PIN *obj)
+void DeviceBinder::disconnect(PinId obj)
 {
     for (auto it = data.begin(); it != data.end();)
     {
@@ -262,7 +281,7 @@ void DeviceBinder::disconnect(PIN *obj)
 
         for (auto c = vec.begin(); c != vec.end();)
         {
-            if (*c == obj)
+            if (c->first == obj)
             {
                 c = vec.erase(c);
             }
@@ -280,34 +299,76 @@ void DeviceBinder::disconnect(PIN *obj)
             ++it;
         }
     }
+    Serial.print("[DeviceBinder] все connect удалёны: PinId ");
+    Serial.println(obj);
 }
 
 void DeviceBinder::disconnect()
 {
+    Serial.print("[DeviceBinder] Полная очистка всех соединений...");
     data.clear();
 }
 
-void DeviceBinder::begin() const
+void DeviceBinder::begin()
 {
-    std::unordered_map<PIN *, std::vector<Event>> mail;
+    ScheduledIntent intent{};
 
     // делаем снимок железа
     for (auto it = data.begin(); it != data.end(); ++it)
     {
         DeviceId deviceID = it->first;
         auto dev = device_registry->get(deviceID);
-        Event ev{};
-        ev.id = deviceID;
-        ev.event = dev->event();
-        ev.type = dev->type();
-        const auto &vecPIN = it->second;
-        for (auto pin = vecPIN.begin(); pin != vecPIN.end(); ++pin)
+        if (!dev)
+            continue;
+        auto devType = dev->type();
+        auto &vecPIN = it->second;
+        for (auto it_vec = vecPIN.begin(); it_vec != vecPIN.end(); ++it_vec)
         {
-            mail[*pin].push_back(ev);
+            intent.intent.targetID = TargetRef::make(TargetType::PIN, it_vec->first);
+            intent.createdAt = myclock.getEpochMillis();
+            intent.life = LifetimeType::ONESHOT;
+            timeMS endTime{};
+            if (devType == DeviceType::Sensor)
+            {
+                intent.source = IntentSource::SENSOR;
+                intent.schedule.startTime = myclock.getEpochMillis();
+                auto sensor = dynamic_cast<SENSOR *>(dev);
+                if (sensor)
+                {
+                    endTime = myclock.getEpochMillis() + sensor->get_interval();
+                }
+                else
+                {
+                    endTime = myclock.getEpochMillis() + 3000;
+                }
+                intent.schedule.endTime = endTime;
+            }
+            if (devType == DeviceType::Switch || devType == DeviceType::Button)
+            {
+                intent.source = IntentSource::USER;
+            }
+
+            switch (dev->event())
+            {
+            case InputEvent::HighLevel:
+                if (store->extend(it_vec->second, endTime))
+                {
+                    continue;
+                }
+            case InputEvent::RisingEdge:
+                intent.intent.type = ActionType::ON;
+                Serial.println("[DeviceBinder] Создал намериние ON");
+                it_vec->second = store->add(intent);
+                break;
+
+            case InputEvent::Toggle:
+                intent.intent.type = ActionType::TOGGLE;
+                Serial.println("[DeviceBinder] Создал намериние TOGGLE");
+                store->add(intent);
+                break;
+            default:
+                break;
+            }
         }
-    }
-    for (auto it = mail.begin(); it != mail.end(); ++it)
-    {
-        it->first->event(it->second);
     }
 }

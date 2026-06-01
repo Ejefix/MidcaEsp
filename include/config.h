@@ -13,7 +13,7 @@ public:
   String get_serverPort();
 protected:
   bool updateConfig(const String &newSSID, const String &newPassword,
-                    const String &newServerIP = "176.60.208.46", const String &newServerPort = "64530");
+                    const String &newServerIP = "api.midca.ru", const String &newServerPort = "64530");
   bool begin();
 private:
 
@@ -29,7 +29,7 @@ private:
 
   const String ssidDefault{ "Asterix" };
   const String passwordDefault{ "09090909" };
-  const String serverIPDefault{ "176.60.208.46" };
+  const String serverIPDefault{ "api.midca.ru" };
   const String serverPortDefault{ "64530" };
   bool config{false};
 };
