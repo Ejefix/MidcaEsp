@@ -1,5 +1,5 @@
 
-#include "scheduler.h"
+#include "arbitrator.h"
 #include "globals.h"
 
 Arbitrator::Arbitrator(ScheduledIntentStore &s) : store(s)
