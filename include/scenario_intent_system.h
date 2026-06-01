@@ -19,6 +19,10 @@ enum class IntentState
 
     RUNNING_ACTIVE, // намериние уже выполняется и ждет завершения
 
+    RETRY_RUNNING, // намериние  пробовали запустить
+
+    FAILED_TIMEOUT, // время действия закончилось
+
     PAUSED, // выполнение временно приостановлено
 
     STOP, // намерение полностью отключено системой/логикой
@@ -32,9 +36,11 @@ enum class IntentState
 enum class ExecuteResult : uint8_t
 {
 
-    SUCCESS, //
+    NONE,
 
-    OVERRIDE_EQUAL_PRIORITY, // заменил intent равного приоритета
+    SUCCESS, // выполнили
+
+    OVERRIDE_EQUAL_PRIORITY, // заменён равным приоритетом
 
     OVERRIDE_LOWER_PRIORITY, // вытеснил более слабый intent
 
@@ -44,16 +50,35 @@ enum class ExecuteResult : uint8_t
 
     DRIVER_NOT_FOUND, // отсутствует драйвер
 
-    UNSUPPORTED_ACTION // действие не поддерживается
-};
+    UNSUPPORTED_ACTION, // действие не поддерживается
 
+};
+enum class IntentFailArbitrator
+{
+    NONE,
+
+    // время жизни intent истекло до первой попытки выполнения
+    TIME_EXPIRED_BEFORE_FIRST_RUN,
+
+    // intent уже пытался выполняться , но время жизни intent истекло
+    TIME_EXPIRED_AFTER_ATTEMPTS,
+
+    // не выполнен из-за блокировки другим intent (конфликт приоритетов)
+    BLOCKED_BY_OTHER_INTENT,
+
+    // заменил intent равного приоритета
+    OVERRIDE_EQUAL_PRIORITY,
+
+    // действие не поддерживается
+    UNSUPPORTED_ACTION
+};
 // информация - что конкретно мы должны сделать
 enum class ActionType
 {
-    ON,     // включить пин/устройство
-    OFF,    // выключить пин/устройство
-    TOGGLE, // инвертировать состояние
-    FADE,   // плавно изменить яркость за время
+    ON,        // включить пин/устройство
+    OFF,       // выключить пин/устройство
+    TOGGLE,    // инвертировать состояние
+    FADE,      // плавно изменить яркость за время
     ONandFADE, // включить с яркостью
 
     DISCONNECT,
@@ -157,11 +182,14 @@ struct Schedule
     timeMS endTime{};
     bool operator==(const Schedule &other) const;
 };
-
-struct Rezult
+// IntentFailArbitrator заполняется только если Arbitrator не пропустил
+// blockingIntentID — всегда источник внешнего конфликта
+// ExecuteResult — всегда итог действия устройства, даже если оно частичное
+struct ExecuteMeta
 {
     ExecuteResult rezult{};
     ScheduledIntentID blockingIntentID{};
+    IntentFailArbitrator reason{};
 };
 
 struct ScheduledIntent
@@ -177,8 +205,8 @@ struct ScheduledIntent
     timeMS updatedAt{};      // последнее изменение
 
     ScheduledIntentID id{};
-    Rezult rezult{};
-    void printF()const;
+    ExecuteMeta rezult{};
+    void printF() const;
 };
 
 // отвечает за добавление и удаление намериний
@@ -192,7 +220,7 @@ public:
     // более новый intent выигрывает
     ScheduledIntentID add(ScheduledIntent &intent); // добавить намерение
     void update();                                  // обновить состояние  магазина
-    bool setState(ScheduledIntentID id, IntentState state, Rezult rezult = Rezult{});
+    bool setState(ScheduledIntentID id, IntentState state, ExecuteMeta rezult);
     // продлевает время жизни
     bool extend(const ScheduledIntentID &id, timeMS time);
     // может вернуть nullptr
@@ -205,6 +233,7 @@ public:
     size_t size() const;
     void clear();
     void printI();
+
 private:
     std::unordered_map<ScheduledIntentID, ScheduledIntent> store{};
 

@@ -105,7 +105,7 @@ void loop()
       }
       if (cmd == "3")
       {
-        for (int z{}; z < 10; ++z)
+        for (int z{}; z < 2; ++z)
         {
           for (size_t i{}; i < pinsG.size(); ++i)
           {
