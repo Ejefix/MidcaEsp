@@ -89,19 +89,23 @@ void loop()
 
       if (cmd == "2")
       {
-        for (size_t i{}; i < pinsG.size(); ++i)
+        for (int z{}; z < 2; ++z)
         {
-
-          if (i % 2 == 0)
+          for (size_t i{}; i < pinsG.size(); ++i)
           {
-            ScheduledIntent intent{};
-            intent.intent.targetID = TargetRef::make(TargetType::PIN, pinsG[i]->get_id());
-            intent.intent.type = ActionType::ON;
-            intent.source = IntentSource::USER;
-            intent.createdAt = myclock.getEpochMillis();
-            store->add(intent);
+
+            if (i % 2 == 0)
+            {
+              ScheduledIntent intent{};
+              intent.intent.targetID = TargetRef::make(TargetType::PIN, pinsG[i]->get_id());
+              intent.intent.type = ActionType::ON;
+              intent.source = IntentSource::USER;
+              intent.createdAt = myclock.getEpochMillis();
+              store->add(intent);
+            }
           }
         }
+       
       }
       if (cmd == "3")
       {
@@ -109,7 +113,6 @@ void loop()
         {
           for (size_t i{}; i < pinsG.size(); ++i)
           {
-
             ScheduledIntent intent{};
             intent.intent.targetID = TargetRef::make(TargetType::PIN, pinsG[i]->get_id());
             intent.intent.type = ActionType::TOGGLE;
@@ -118,6 +121,7 @@ void loop()
             store->add(intent);
           }
         }
+       
       }
       if (cmd == "4")
       {
@@ -131,6 +135,7 @@ void loop()
           intent.createdAt = myclock.getEpochMillis();
           store->add(intent);
         }
+      
       }
       if (cmd == "5")
       {
@@ -138,6 +143,7 @@ void loop()
         Serial.print("[INFO] размер магазина ");
         Serial.print(store->size());
         Serial.println(" намериний");
+       
       }
 
       if (cmd == "6")
@@ -147,6 +153,7 @@ void loop()
         Serial.print("[INFO] размер магазина ");
         Serial.print(store->size());
         Serial.println(" намериний");
+       
       }
 
       cmd = ""; // очистить буфер
@@ -162,7 +169,6 @@ void loop()
   wifi.maintain();                                  //???????????????????????????????????
   myclock.loop();
   {
-
     device_binder->begin();
     arbitrator->begin();
     intent_executor->begin();

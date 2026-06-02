@@ -1,6 +1,7 @@
 #include "scenario_intent_system.h"
 #include <algorithm>
 #include "globals.h"
+const uint64_t one_day = 24ULL * 60ULL * 60ULL * 1000ULL;
 
 ScheduledIntentStore::ScheduledIntentStore()
 {
@@ -67,12 +68,11 @@ bool ScheduledIntentStore::setState(ScheduledIntentID id, IntentState state, Exe
 
     if (it != store.end())
     {
-        if (it->second.state == IntentState::FAILED ||
-            it->second.state == IntentState::STOP ||
-            it->second.state == IntentState::DONE ||
-            it->second.state == IntentState::TO_DELETE ||
-            it->second.state == IntentState::FAILED_TIMEOUT)
+        if (isFinalState(it->second.state))
         {
+            Serial.print("[ScheduledIntentStore::setState] Намериние ScheduledIntentID ");
+            Serial.print(id);
+            Serial.println(" не верный статус для обновления");
             return false;
         }
         it->second.updatedAt = myclock.getEpochMillis();
@@ -80,13 +80,11 @@ bool ScheduledIntentStore::setState(ScheduledIntentID id, IntentState state, Exe
         it->second.rezult = rezult;
         switch (state)
         {
-        case IntentState::ACTIVE:
-            //     Serial.println(" установлен статус ACTIVE");
-            running.erase(id);
-            break;
         case IntentState::RUNNING:
             //     Serial.println(" установлен статус RUNNING");
             running.emplace(id);
+            break;
+        case IntentState::ACTIVE:
             break;
         case IntentState::RETRY_RUNNING:
             //     Serial.println(" установлен статус RETRY_RUNNING");
@@ -95,17 +93,13 @@ bool ScheduledIntentStore::setState(ScheduledIntentID id, IntentState state, Exe
             //     Serial.println(" установлен статус RUNNING_ACTIVE");
             break;
         case IntentState::PAUSED:
-            //    Serial.println(" установлен статус PAUSED");
-            running.erase(id);
-            break;
-        case IntentState::STOP:
-            running.erase(id);
-            //    Serial.println(" установлен статус STOP");
-            break;
-        case IntentState::FAILED_TIMEOUT:
         case IntentState::DONE:
-        {
             it->second.executedAt = myclock.getEpochMillis();
+        case IntentState::STOP:
+        case IntentState::FAILED:
+        case IntentState::TO_DELETE:
+        default:
+        {
             auto intent = get(id);
             if (intent)
             {
@@ -124,19 +118,7 @@ bool ScheduledIntentStore::setState(ScheduledIntentID id, IntentState state, Exe
                 }
             }
             running.erase(id);
-            Serial.println(" установлен статус DONE");
-            break;
         }
-        case IntentState::FAILED:
-            running.erase(id);
-            Serial.println(" установлен статус FAILED");
-            break;
-        case IntentState::TO_DELETE:
-            running.erase(id);
-            Serial.println(" установлен статус TO_DELETE");
-            break;
-        default:
-            return false;
         }
         return true;
     }
@@ -149,43 +131,63 @@ bool ScheduledIntentStore::extend(const ScheduledIntentID &id, timeMS time)
     auto it = store.find(id);
     if (time <= myclock.getEpochMillis())
         return false;
+    if (isFinalState(it->second.state))
+    {
+        Serial.print("[ScheduledIntentStore::extend] Намериние ScheduledIntentID ");
+        Serial.print(id);
+        Serial.println(" не верный статус для обновления");
+        return false;
+    }
     if (it != store.end())
     {
-        switch (it->second.state)
-        {
-        case IntentState::ACTIVE:
-        case IntentState::RUNNING:
-        case IntentState::PAUSED:
-        case IntentState::RUNNING_ACTIVE:
-        case IntentState::RETRY_RUNNING:
-            Serial.print("[ScheduledIntentStore] Намериние ScheduledIntentID ");
-            Serial.print(id);
-            Serial.println(" успешно обновил время дейсвия");
-            it->second.updatedAt = myclock.getEpochMillis();
-            it->second.schedule.endTime = time;
-            return true;
-        default:
-            Serial.print("[ScheduledIntentStore] Намериние ScheduledIntentID ");
-            Serial.print(id);
-            Serial.println(" не верный статус для обновления");
-            return false;
-        }
+        Serial.print("[ScheduledIntentStore] Намериние ScheduledIntentID ");
+        Serial.print(id);
+        Serial.println(" успешно обновил время дейсвия");
+        it->second.updatedAt = myclock.getEpochMillis();
+        it->second.schedule.endTime = time;
+        return true;
     }
     return false;
 }
 
-const ScheduledIntent *ScheduledIntentStore::get(ScheduledIntentID id) const
+bool ScheduledIntentStore::moveToNextDay(const ScheduledIntentID &id)
 {
     auto it = store.find(id);
+
     if (it != store.end())
     {
-        return &it->second;
+        if (isFinalState(it->second.state))
+        {
+            Serial.print("[ScheduledIntentStore::moveToNextDay] Намериние ScheduledIntentID ");
+            Serial.print(id);
+            Serial.println(" не верный статус для обновления");
+            return false;
+        }
+        Serial.print("[ScheduledIntentStore] Намериние ScheduledIntentID ");
+        Serial.print(id);
+        Serial.println(" успешно обновил время дейсвия");
+        it->second.updatedAt = myclock.getEpochMillis();
+        while (it->second.schedule.endTime < it->second.updatedAt)
+        {
+            it->second.schedule.startTime += one_day;
+            it->second.schedule.endTime += one_day;
+        }
+        return true;
     }
-
-    return nullptr;
+    return false;
 }
 
-const std::unordered_map<TargetRefID, std::vector<ScheduledIntentID>> &ScheduledIntentStore::all() const
+std::optional<ScheduledIntent> ScheduledIntentStore::get(ScheduledIntentID id) const
+{
+    auto it = store.find(id);
+
+    if (it == store.end())
+        return std::nullopt;
+
+    return it->second; // копия
+}
+
+const std::unordered_map<TargetRefID, std::vector<ScheduledIntentID>> ScheduledIntentStore::all() const
 {
     return scheduler;
 }
@@ -195,9 +197,17 @@ std::unordered_set<ScheduledIntentID> ScheduledIntentStore::get_running() const
     return running;
 }
 
-void ScheduledIntentStore::push_running(const ScheduledIntentID &id)
+
+bool ScheduledIntentStore::isFinalState(IntentState state) const
 {
-    running.emplace(id);
+    if (state == IntentState::FAILED ||
+        state == IntentState::STOP ||
+        state == IntentState::DONE ||
+        state == IntentState::TO_DELETE)
+    {
+        return true;
+    }
+    return false;
 }
 
 uint8_t ScheduledIntentStore::resolvePriority(const IntentSource &source, const IntentUrgency &urgency) const
@@ -291,6 +301,7 @@ void ScheduledIntent::printF() const
 
     switch (state)
     {
+
     case IntentState::ACTIVE:
         Serial.println("ACTIVE");
         break;
@@ -372,6 +383,9 @@ void ScheduledIntent::printF() const
 
     switch (rezult.rezult)
     {
+    case ExecuteResult::NONE:
+        Serial.println("NONE");
+        break;
     case ExecuteResult::SUCCESS:
         Serial.println("SUCCESS");
         break;
