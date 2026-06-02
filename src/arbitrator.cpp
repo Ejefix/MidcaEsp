@@ -1,4 +1,3 @@
-
 #include "arbitrator.h"
 #include "globals.h"
 
@@ -135,55 +134,43 @@ void Arbitrator::beginPINtarget(const std::vector<ScheduledIntentID> &vec) const
 bool Arbitrator::resolve_lifecycle(const ScheduledIntent *candidate) const
 {
     auto time = myclock.getEpochMillis();
-    if (candidate->life == LifetimeType::ONESHOT &&
-        (candidate->schedule.startTime == candidate->schedule.endTime ||
-         candidate->schedule.startTime >= time && time <= candidate->schedule.endTime))
-    {
-        return true;
-    }
-    if (candidate->life == LifetimeType::REPEAT && candidate->schedule.startTime >= time && time <= candidate->schedule.endTime)
-    {
-        return true;
-    }
-    switch (candidate->life)
-    {
-    case LifetimeType::ONESHOT:
-        if (candidate->schedule.startTime == candidate->schedule.endTime ||
-            candidate->schedule.startTime >= time && time <= candidate->schedule.endTime)
-        {
-            return true;
-        }
-        break;
-    case LifetimeType::REPEAT:
-        if (candidate->schedule.startTime >= time && time <= candidate->schedule.endTime)
-        {
-            return true;
-        }
-        break;
-    default:
-        break;
-    }
+    const auto &sched = candidate->schedule;
 
+    // Проверка расписания (ОДНА логика)
+    bool isTimeValid = false;
+    if (candidate->life == LifetimeType::ONESHOT)
+    {
+        isTimeValid = (sched.startTime == sched.endTime) ||
+                      (sched.startTime <= time && time <= sched.endTime);
+    }
+    else // REPEAT
+    {
+        isTimeValid = (sched.startTime <= time && time <= sched.endTime);
+    }
+    
+    if (isTimeValid)
+        return true;
+
+    // Обработка просроченного intent
     if (candidate->state == IntentState::RUNNING_ACTIVE)
     {
         store.setState(candidate->id, IntentState::DONE, candidate->rezult);
     }
     else
     {
+        ExecuteMeta result = candidate->rezult;
+        
         if (candidate->state == IntentState::RETRY_RUNNING)
         {
-            ExecuteMeta rezultPIN{};
-            rezultPIN = candidate->rezult;
-            rezultPIN.reason = IntentFailArbitrator::BLOCKED_BY_OTHER_INTENT;
-            store.setState(candidate->id, IntentState::FAILED_TIMEOUT, rezultPIN);
+            result.reason = IntentFailArbitrator::BLOCKED_BY_OTHER_INTENT;
+            store.setState(candidate->id, IntentState::FAILED_TIMEOUT, result);
         }
         else
         {
-            ExecuteMeta rezultPIN{};
-            rezultPIN = candidate->rezult;
-            rezultPIN.reason = IntentFailArbitrator::TIME_EXPIRED_BEFORE_FIRST_RUN;
-            store.setState(candidate->id, IntentState::FAILED_TIMEOUT, rezultPIN);
+            result.reason = IntentFailArbitrator::TIME_EXPIRED_BEFORE_FIRST_RUN;
+            store.setState(candidate->id, IntentState::FAILED_TIMEOUT, result);
         }
     }
+    
     return false;
 }
