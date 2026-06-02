@@ -21,8 +21,6 @@ enum class IntentState
 
     RETRY_RUNNING, // намериние  пробовали запустить
 
-    FAILED_TIMEOUT, // время действия закончилось
-
     PAUSED, // выполнение временно приостановлено
 
     STOP, // намерение полностью отключено системой/логикой
@@ -71,6 +69,7 @@ enum class IntentFailArbitrator
 
     // действие не поддерживается
     UNSUPPORTED_ACTION
+
 };
 // информация - что конкретно мы должны сделать
 enum class ActionType
@@ -210,8 +209,12 @@ struct ScheduledIntent
 };
 
 // отвечает за добавление и удаление намериний
+// Методы управления состоянием Intent.
+// Предназначены только для использования Arbitrator.
 class ScheduledIntentStore
 {
+    friend class Arbitrator;
+
 public:
     ScheduledIntentStore();
 
@@ -219,20 +222,33 @@ public:
     // если priority одинаковый
     // более новый intent выигрывает
     ScheduledIntentID add(ScheduledIntent &intent); // добавить намерение
-    void update();                                  // обновить состояние  магазина
-    bool setState(ScheduledIntentID id, IntentState state, ExecuteMeta rezult);
-    // продлевает время жизни
-    bool extend(const ScheduledIntentID &id, timeMS time);
-    // может вернуть nullptr
-    const ScheduledIntent *get(ScheduledIntentID id) const;
-    // цель и отсортированный ( по Priority от min -> max ) вектор ID
-    const std::unordered_map<TargetRefID, std::vector<ScheduledIntentID>> &all() const;
+    void update();
+    // Проверяет, является ли состояние финальным.
+    // Финальное состояние означает, что intent больше не может изменяться
+    // и не участвует в дальнейшей обработке жизненного цикла (кроме удаления).
+    bool isFinalState(IntentState state) const;
+
     std::unordered_set<ScheduledIntentID> get_running() const;
     // получает приоритет события, на основе кто создал и уровня важности события
     uint8_t resolvePriority(const IntentSource &source, const IntentUrgency &urgency) const;
+    // может вернуть  std::nullopt;
+    std::optional<ScheduledIntent> get(ScheduledIntentID id) const;
     size_t size() const;
     void clear();
     void printI();
+
+protected:
+    // Методы управления состоянием Intent.
+    // Предназначены только для использования Arbitrator.
+
+    // обновить статус намериния
+    bool setState(ScheduledIntentID id, IntentState state, ExecuteMeta rezult);
+    // продлевает время жизни
+    bool extend(const ScheduledIntentID &id, timeMS time);
+    // переключает на следущие сутки
+    bool moveToNextDay(const ScheduledIntentID &id);
+    // цель и отсортированный ( по Priority от min -> max ) вектор ID
+    const std::unordered_map<TargetRefID, std::vector<ScheduledIntentID>> all() const;
 
 private:
     std::unordered_map<ScheduledIntentID, ScheduledIntent> store{};
@@ -245,8 +261,6 @@ private:
     std::unordered_map<TargetRefID, std::vector<ScheduledIntentID>> scheduler{};
 
     std::unordered_set<ScheduledIntentID> running{};
-    // вставка события для его выполнения
-    void push_running(const ScheduledIntentID &id);
 
     ScheduledIntentID nextId{1};
 };
