@@ -1,4 +1,3 @@
-
 #include "arbitrator.h"
 #include "globals.h"
 
