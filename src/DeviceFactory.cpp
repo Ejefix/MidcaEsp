@@ -211,7 +211,6 @@ DeviceBinder::DeviceBinder()
 bool DeviceBinder::connect(DeviceId device, PinId obj)
 {
     
-    
     if(TargetRef::getType(device) != TargetType::DEVICE && !device_registry->get(TargetRef::getId(device)))
     {
         return false;
@@ -326,11 +325,9 @@ void DeviceBinder::begin()
         {
             intent.intent.targetID = TargetRef::make(TargetType::PIN, it_vec->first);
             intent.createdAt = myclock.getEpochMillis();
-            intent.life = LifetimeType::ONESHOT;
             timeMS endTime{};
             if (devType == DeviceType::Sensor)
             {
-                intent.source = IntentSource::SENSOR;
                 intent.schedule.startTime = myclock.getEpochMillis();
                 auto sensor = dynamic_cast<SENSOR *>(dev);
                 if (sensor)
@@ -346,15 +343,20 @@ void DeviceBinder::begin()
             if (devType == DeviceType::Switch || devType == DeviceType::Button)
             {
                 intent.source = IntentSource::USER;
+                intent.life = LifetimeType::ONCE_TRY;
             }
-
+            else
+            {
+                intent.source = IntentSource::SENSOR;
+                intent.life = LifetimeType::ONESHOT;
+            }
             switch (dev->event())
             {
             case InputEvent::HighLevel:
                 if (store->extend(it_vec->second, endTime))
                 {
                     continue;
-                }
+                }     
             case InputEvent::RisingEdge:
                 intent.intent.type = ActionType::ON;
                 Serial.println("[DeviceBinder] Создал намериние ON");

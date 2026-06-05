@@ -57,7 +57,8 @@ public:
   void fill_json(JsonArray &arr) const;
 
 private:
-  static PinId id_pin;
+
+  static uint16_t id_pin;
   const PinId id;
   friend CommandExecutor;
 

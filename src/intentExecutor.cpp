@@ -12,21 +12,26 @@ void IntentExecutor::begin()
 
 void IntentExecutor::executor(const ScheduledIntentID &id) const
 {
-    auto intent = store->get(id);
-    if (!intent)
+    auto snap = store->get(id);
+
+    if (!snap)
+    {
         return;
+    }
+    ScheduledIntent intent = *snap;
+
     auto time = myclock.getEpochMillis();
 
-    auto typeID = TargetRef::getType(intent->intent.targetID); // кто должен сделать
+    auto typeID = TargetRef::getType(intent.intent.targetID); // кто должен сделать
 
     switch (typeID)
     {
     case TargetType::PIN:
-        executorPIN(*intent);
+        executorPIN(intent);
 
         break;
     case TargetType::DEVICE:
-        executorDEVICE(*intent);
+        executorDEVICE(intent);
         break;
     case TargetType::INTENT:
         /* code */
@@ -43,20 +48,7 @@ void IntentExecutor::executorPIN(const ScheduledIntent &intent) const
     {
         if (pinsG[i]->get_id() == targetID)
         {
-            ExecuteResult rezult = ExecuteResult::UNSUPPORTED_ACTION;
-            // это повидение учитывает только если не указан временной интервал и намериние однократное !
-            if (intent.life == LifetimeType::ONESHOT && intent.schedule.startTime == intent.schedule.endTime)
-            {
-                if (intent.schedule.startTime == intent.schedule.endTime)
-                {
-                    executorPIN_OneShotNow(pinsG[i], intent);
-                }
-                else
-                {
-                }
-                return;
-            }
-            return;
+            executorRezult(pinsG[i], intent);
         }
     }
 }
@@ -65,114 +57,50 @@ void IntentExecutor::executorDEVICE(const ScheduledIntent &intent) const
 {
 }
 
-void IntentExecutor::executorPIN_OneShotNow(PIN *pin, const ScheduledIntent &intent) const
+void IntentExecutor::executorRezult(PIN *pin, const ScheduledIntent &intent) const
 {
+    ExecuteResult rezult{};
+    switch (intent.life)
+    {
+    case LifetimeType::ONCE_TRY:
+        rezult = pin->executor(intent, store->resolvePriority(intent.source, intent.urgency), LockPolicyType::INFINITE);
+        break;
+    case LifetimeType::ONESHOT:
+        rezult = pin->executor(intent, store->resolvePriority(intent.source, intent.urgency), LockPolicyType::TTL, intent.schedule.endTime);
+        break;
+    case LifetimeType::REPEAT:
+        rezult = pin->executor(intent, store->resolvePriority(intent.source, intent.urgency), LockPolicyType::TTL, intent.schedule.endTime);
+        break;
+    case LifetimeType::UNENDING:
+        rezult = pin->executor(intent, store->resolvePriority(intent.source, intent.urgency), LockPolicyType::INFINITE, intent.schedule.endTime);
+        break;
+    default:
+        rezult = pin->executor(intent, store->resolvePriority(intent.source, intent.urgency), LockPolicyType::INFINITE);
+    }
 
-    // ExecuteResult executor(const ScheduledIntent &intent, uint8_t priority, LockPolicyType policy, timeMS endTime = 0);
-    auto rezult = pin->executor(intent, store->resolvePriority(intent.source, intent.urgency), LockPolicyType::INFINITE);
-
-    ExecuteMeta rezultPIN{};
     switch (rezult)
     {
     case ExecuteResult::SUCCESS:
-        rezultPIN = intent.rezult;
-        rezultPIN.rezult = ExecuteResult::SUCCESS;
-        rezultPIN.blockingIntentID = 0;
-        store->setState(intent.id, IntentState::DONE, rezultPIN);
+        store->setStateExecutor(intent.id, ExecuteResult::SUCCESS);
         break;
-    case ExecuteResult::OVERRIDE_EQUAL_PRIORITY:
-    {
-        rezultPIN = intent.rezult;
-        rezultPIN.rezult = ExecuteResult::SUCCESS;
-        store->setState(intent.id, IntentState::DONE, rezultPIN);
-        rezultPIN.blockingIntentID = intent.id;
-        rezultPIN.rezult = ExecuteResult::OVERRIDE_EQUAL_PRIORITY;
-        store->setState(pin->get_pending_lock(intent.intent.type).id, IntentState::RETRY_RUNNING, rezultPIN);
+    case ExecuteResult::SUCCESS_OVERRIDE_EQUAL_PRIORITY:
+    case ExecuteResult::SUCCESS_OVERRIDE_LOWER_PRIORITY:
+        if (intent.id == pin->get_pending_lock(intent.intent.type).id)
+            break;
+        // устанавливаем данные для текущего
+        store->setStateExecutor(intent.id, rezult, pin->get_pending_lock(intent.intent.type).id);
+        // устанавливаем данные для того кого вытеснили
+        store->setStateExecutor(pin->get_pending_lock(intent.intent.type).id, ExecuteResult::BLOCKED_BY_HIGHER_PRIORITY, intent.id);
         break;
-    }
-    case ExecuteResult::OVERRIDE_LOWER_PRIORITY:
-    {
-        rezultPIN = intent.rezult;
-        rezultPIN.rezult = ExecuteResult::SUCCESS;
-        store->setState(intent.id, IntentState::DONE, rezultPIN);
-        rezultPIN.blockingIntentID = intent.id;
-        rezultPIN.rezult = ExecuteResult::BLOCKED_BY_HIGHER_PRIORITY;
-        store->setState(pin->get_pending_lock(intent.intent.type).id, IntentState::RETRY_RUNNING, rezultPIN);
-        break;
-    }
     case ExecuteResult::BLOCKED_BY_HIGHER_PRIORITY:
-        rezultPIN.rezult = ExecuteResult::BLOCKED_BY_HIGHER_PRIORITY;
-        rezultPIN.blockingIntentID = pin->get_active_lock(intent.intent.type).id;
-        store->setState(intent.id, IntentState::STOP, rezultPIN);
+        // устанавливаем данные для текущего
+        store->setStateExecutor(intent.id, rezult, pin->get_active_lock(intent.intent.type).id);
         break;
     case ExecuteResult::INVALID_PAYLOAD:
-        rezultPIN.rezult = ExecuteResult::INVALID_PAYLOAD;
-        store->setState(intent.id, IntentState::FAILED, rezultPIN);
-        break;
     case ExecuteResult::DRIVER_NOT_FOUND:
-        rezultPIN.rezult = ExecuteResult::DRIVER_NOT_FOUND;
-        store->setState(intent.id, IntentState::FAILED, rezultPIN);
-        break;
     case ExecuteResult::UNSUPPORTED_ACTION:
     default:
-        rezultPIN.rezult = ExecuteResult::UNSUPPORTED_ACTION;
-        store->setState(intent.id, IntentState::FAILED, rezultPIN);
-        break;
-    }
-}
-
-void IntentExecutor::executorPIN_OneShotInterval(PIN *pin, const ScheduledIntent &intent) const
-{
-
-    // ExecuteResult executor(const ScheduledIntent &intent, uint8_t priority, LockPolicyType policy, timeMS endTime = 0);
-    auto rezult = pin->executor(intent, store->resolvePriority(intent.source, intent.urgency), LockPolicyType::TTL, intent.schedule.endTime);
-
-    ExecuteMeta rezultPIN{};
-    switch (rezult)
-    {
-    case ExecuteResult::SUCCESS:
-        rezultPIN = intent.rezult;
-        rezultPIN.rezult = ExecuteResult::SUCCESS;
-        rezultPIN.blockingIntentID = 0;
-        store->setState(intent.id, IntentState::RUNNING_ACTIVE, rezultPIN);
-        break;
-    case ExecuteResult::OVERRIDE_EQUAL_PRIORITY:
-    {
-        rezultPIN = intent.rezult;
-        rezultPIN.rezult = ExecuteResult::SUCCESS;
-        store->setState(intent.id, IntentState::RUNNING_ACTIVE, rezultPIN);
-        rezultPIN.blockingIntentID = intent.id;
-        rezultPIN.rezult = ExecuteResult::OVERRIDE_EQUAL_PRIORITY;
-        store->setState(pin->get_pending_lock(intent.intent.type).id, IntentState::RETRY_RUNNING, rezultPIN);
-        break;
-    }
-    case ExecuteResult::OVERRIDE_LOWER_PRIORITY:
-    {
-        rezultPIN = intent.rezult;
-        rezultPIN.rezult = ExecuteResult::SUCCESS;
-        store->setState(intent.id, IntentState::RUNNING_ACTIVE, rezultPIN);
-        rezultPIN.blockingIntentID = intent.id;
-        rezultPIN.rezult = ExecuteResult::BLOCKED_BY_HIGHER_PRIORITY;
-        store->setState(pin->get_pending_lock(intent.intent.type).id, IntentState::RETRY_RUNNING, rezultPIN);
-        break;
-    }
-    case ExecuteResult::BLOCKED_BY_HIGHER_PRIORITY:
-        rezultPIN.rezult = ExecuteResult::BLOCKED_BY_HIGHER_PRIORITY;
-        rezultPIN.blockingIntentID = pin->get_active_lock(intent.intent.type).id;
-        store->setState(intent.id, IntentState::RETRY_RUNNING, rezultPIN);
-        break;
-    case ExecuteResult::INVALID_PAYLOAD:
-        rezultPIN.rezult = ExecuteResult::INVALID_PAYLOAD;
-        store->setState(intent.id, IntentState::FAILED, rezultPIN);
-        break;
-    case ExecuteResult::DRIVER_NOT_FOUND:
-        rezultPIN.rezult = ExecuteResult::DRIVER_NOT_FOUND;
-        store->setState(intent.id, IntentState::PAUSED, rezultPIN);
-        break;
-    case ExecuteResult::UNSUPPORTED_ACTION:
-    default:
-        rezultPIN.rezult = ExecuteResult::UNSUPPORTED_ACTION;
-        store->setState(intent.id, IntentState::FAILED, rezultPIN);
+        store->setStateExecutor(intent.id, rezult);
         break;
     }
 }
