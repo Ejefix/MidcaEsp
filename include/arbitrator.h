@@ -1,6 +1,13 @@
 #pragma once
 #include "scenario_intent_system.h"
 
+enum class LifecycleResolution
+{
+    WAIT,    // время выполнения ещё не наступило
+    EXECUTE, // сейчас можно выполнять
+    EXPIRED  // жизненный цикл уже закончился
+};
+
 /*
 обрабатывает намериния пользователя
 является центром логики обработки событий.
@@ -21,19 +28,7 @@ private:
      */
     void beginPINtarget(const std::vector<ScheduledIntentID> &vec) const;
 
-    // Проверяет жизненный цикл ScheduledIntent относительно текущего времени.
-    // Определяет, находится ли intent в активном временном окне выполнения.
-    //
-    // Если текущее время внутри окна [startTime, endTime] — intent считается валидным для выполнения (true).
-    // Если текущее время ещё не достигло startTime — никаких изменений не происходит (false).
-    // Если окно выполнения уже истекло:
-    //   - для REPEAT intent переводится в PAUSED и переносится на следующий день
-    //   - для ONESHOT intent переводится в финальное состояние (DONE)
-    //   - дополнительно фиксируется причина завершения
-    //
-    // Возвращает:
-    //   true  — intent можно выполнять сейчас
-    //   false — intent не должен выполняться сейчас (либо ещё не время, либо уже завершён/перенесён)
-    bool resolve_lifecycle(const ScheduledIntent &candidate) const;
-    bool resolve_execution(const ScheduledIntent &candidate) const;
+    // отчает на вопрос, имеет ли права перейти сейчас в статус выполнения
+    LifecycleResolution resolve_lifecycle(const ScheduledIntent &candidate) const;
+    bool isExecutionFinished(const ScheduledIntent &candidate) const;
 };

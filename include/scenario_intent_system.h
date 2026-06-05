@@ -17,10 +17,6 @@ enum class IntentState
 
     RUNNING, // выполнить
 
-    RUNNING_ACTIVE, // намериние уже выполняется и ждет завершения
-
-    RETRY_RUNNING, // намериние  пробовали запустить
-
     PAUSED, // выполнение временно приостановлено
 
     STOP, // намерение полностью отключено системой/логикой
@@ -38,9 +34,9 @@ enum class ExecuteResult : uint8_t
 
     SUCCESS, // выполнили
 
-    OVERRIDE_EQUAL_PRIORITY, // заменён равным приоритетом
+    SUCCESS_OVERRIDE_EQUAL_PRIORITY, // заменил intent равного приоритета
 
-    OVERRIDE_LOWER_PRIORITY, // вытеснил более слабый intent
+    SUCCESS_OVERRIDE_LOWER_PRIORITY, // заменил intent более низкого приоритета
 
     BLOCKED_BY_HIGHER_PRIORITY, // заблокирован более сильным intent
 
@@ -55,8 +51,8 @@ enum class IntentFailArbitrator
 {
     NONE,
 
-    // время жизни intent истекло до первой попытки выполнения
-    TIME_EXPIRED_BEFORE_FIRST_RUN,
+    // время жизни intent истекло
+    TIME_EXPIRED_BEFORE,
 
     // intent уже пытался выполняться , но время жизни intent истекло
     TIME_EXPIRED_AFTER_ATTEMPTS,
@@ -74,28 +70,33 @@ enum class IntentFailArbitrator
 // информация - что конкретно мы должны сделать
 enum class ActionType
 {
-    ON,        // включить пин/устройство
-    OFF,       // выключить пин/устройство
-    TOGGLE,    // инвертировать состояние
-    FADE,      // плавно изменить яркость за время
-    ONandFADE, // включить с яркостью
+    ON,     // включить пин/устройство
+    OFF,    // выключить пин/устройство
+    TOGGLE, // инвертировать состояние
+    FADE,   // плавно изменить яркость за время
 
+    CONNECT,
     DISCONNECT,
 
     PUSH,
     CLEAR,
-    CONNECT,
+   
 
-    DISABLE, // временно запретить выполнение (блокировка логики)
-    ENABLE   // снять запрет, восстановить выполнение правил
+    DISABLES, // временно запретить выполнение (блокировка логики)
+    ENABLES,  // снять запрет, восстановить выполнение правил
+    DISABLE_TOGGLE,
+    DISABLE_FADE,
+    ENABLE_TOGGLE,
+    ENABLE_FADE
 };
 // жизненный цикл события
 enum class LifetimeType
 {
-    ONESHOT, // событие выполняется один раз и удаляется после срабатывания
-    REPEAT   // событие выполняется каждый день/по расписанию
+    ONCE_TRY, // ровно одна попытка исполнения, независимо от результата
+    ONESHOT,  // событие выполняется один раз по времени
+    REPEAT,   // событие выполняется каждый день/по расписанию
+    UNENDING  // бесконечное
 };
-
 /*
 информация о том , кто должен исполнить событие.
 если событие применяется к  событию,
@@ -227,10 +228,13 @@ public:
     // Финальное состояние означает, что intent больше не может изменяться
     // и не участвует в дальнейшей обработке жизненного цикла (кроме удаления).
     bool isFinalState(IntentState state) const;
-
+    // продлевает время жизни
+    bool extend(const ScheduledIntentID &id, timeMS time);
     std::unordered_set<ScheduledIntentID> get_running() const;
     // получает приоритет события, на основе кто создал и уровня важности события
     uint8_t resolvePriority(const IntentSource &source, const IntentUrgency &urgency) const;
+
+    bool setStateExecutor(ScheduledIntentID id, ExecuteResult res, ScheduledIntentID blockingIntentID = 0);
     // может вернуть  std::nullopt;
     std::optional<ScheduledIntent> get(ScheduledIntentID id) const;
     size_t size() const;
@@ -243,8 +247,7 @@ protected:
 
     // обновить статус намериния
     bool setState(ScheduledIntentID id, IntentState state, ExecuteMeta rezult);
-    // продлевает время жизни
-    bool extend(const ScheduledIntentID &id, timeMS time);
+
     // переключает на следущие сутки
     bool moveToNextDay(const ScheduledIntentID &id);
     // цель и отсортированный ( по Priority от min -> max ) вектор ID

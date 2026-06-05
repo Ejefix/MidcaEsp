@@ -5,7 +5,7 @@
 #include "globals.h"
 
 bool PIN::changed_flags{false};
-PinId PIN::id_pin{3001};
+uint16_t PIN::id_pin{3001};
 
 PIN::PIN(IPinDriver *pin_driver_) : pin_driver(pin_driver_), id{id_pin}
 {
@@ -41,30 +41,81 @@ ExecuteResult PIN::executor(const ScheduledIntent &intent, uint8_t priority, Loc
   ExecuteResult rezult{};
   switch (intent.intent.type)
   {
+  case ActionType::ENABLE_TOGGLE:
   case ActionType::ON:
   case ActionType::OFF:
   case ActionType::TOGGLE:
     active = &active_power_lock;
     pending = &pending_power_lock;
     break;
+  case ActionType::ENABLE_FADE:
   case ActionType::FADE:
   {
     active = &active_brightness_lock;
     pending = &pending_brightness_lock;
     break;
+  }
+  case ActionType::CONNECT:
+  {
+    auto fade = std::get_if<ConnectPayload>(&intent.intent.payload);
+    if (!fade)
+      return ExecuteResult::INVALID_PAYLOAD;
+    DeviceId device = fade->obj;
+    if (device_binder->connect(fade->obj, this->id))
+    {
+      return ExecuteResult::SUCCESS;
+    }
+    return ExecuteResult::INVALID_PAYLOAD;
+  }
+  case ActionType::DISCONNECT:
+  {
+    auto fade = std::get_if<ConnectPayload>(&intent.intent.payload);
+    if (!fade)
+      return ExecuteResult::INVALID_PAYLOAD;
+    DeviceId device = fade->obj;
+    device_binder->disconnect(fade->obj, this->id);
+    return ExecuteResult::SUCCESS;
+  }
+  case ActionType::CLEAR:
+  { // разбита на два, что бы не смотреть чужой приоритет
+    if (check_lock(active_brightness_lock))
+    {
+      if (active_brightness_lock.priority > priority)
+      {
+        return ExecuteResult::BLOCKED_BY_HIGHER_PRIORITY;
+      }
+    }
+    if (check_lock(active_power_lock))
+    {
+      if (active_power_lock.priority > priority)
+      {
+        return ExecuteResult::BLOCKED_BY_HIGHER_PRIORITY;
+      }
+    }
+    activPIN = false;
+    active_power_lock = {};
+    pending_power_lock = {};
+    active_brightness_lock = {};
+    pending_brightness_lock = {};
+    device_binder->disconnect(this->id);
+    brightness_to = 0;
+    brightness_from = 100;
+    brightness = 100;
+    return ExecuteResult::SUCCESS;
+  }
   default:
     return ExecuteResult::UNSUPPORTED_ACTION;
   }
-  }
+
   if (check_lock(*active))
   {
     if (priority > active->priority)
     {
-      rezult = ExecuteResult::OVERRIDE_LOWER_PRIORITY;
+      rezult = ExecuteResult::SUCCESS_OVERRIDE_EQUAL_PRIORITY;
     }
     else if (priority == active->priority)
     {
-      rezult = ExecuteResult::OVERRIDE_EQUAL_PRIORITY;
+      rezult = ExecuteResult::SUCCESS_OVERRIDE_LOWER_PRIORITY;
     }
     else
     {
@@ -107,6 +158,14 @@ ExecuteResult PIN::executor(const ScheduledIntent &intent, uint8_t priority, Loc
     promote_lock(active, pending);
     break;
   }
+  case ActionType::ENABLE_TOGGLE:
+    promote_lock(active, pending);
+    active_power_lock = Lock{};
+    break;
+  case ActionType::ENABLE_FADE:
+    promote_lock(active, pending);
+    active_brightness_lock = Lock{};
+    break;
   default:
     return ExecuteResult::UNSUPPORTED_ACTION;
   }

@@ -43,9 +43,20 @@ void setup()
       1,                 // приоритет
       NULL               // handle
   );
+  for (size_t i{}; i < pinsG.size(); ++i)
+  {
+
+    ScheduledIntent intent{};
+    intent.intent.targetID = TargetRef::make(TargetType::PIN, pinsG[i]->get_id());
+    intent.intent.type = ActionType::OFF;
+    intent.source = IntentSource::IntentDEFAULT;
+    intent.life = LifetimeType::UNENDING;
+    intent.createdAt = myclock.getEpochMillis();
+    store->add(intent);
+  }
 }
 
-String cmd;
+String cmd{};
 void printRAM()
 {
   Serial.println("=== RAM REPORT ===");
@@ -89,23 +100,20 @@ void loop()
 
       if (cmd == "2")
       {
-        for (int z{}; z < 2; ++z)
-        {
-          for (size_t i{}; i < pinsG.size(); ++i)
-          {
 
-            if (i % 2 == 0)
-            {
-              ScheduledIntent intent{};
-              intent.intent.targetID = TargetRef::make(TargetType::PIN, pinsG[i]->get_id());
-              intent.intent.type = ActionType::ON;
-              intent.source = IntentSource::USER;
-              intent.createdAt = myclock.getEpochMillis();
-              store->add(intent);
-            }
+        for (size_t i{}; i < pinsG.size(); ++i)
+        {
+
+          if (i % 2 == 0)
+          {
+            ScheduledIntent intent{};
+            intent.intent.targetID = TargetRef::make(TargetType::PIN, pinsG[i]->get_id());
+            intent.intent.type = ActionType::ON;
+            intent.source = IntentSource::USER;
+            intent.createdAt = myclock.getEpochMillis();
+            store->add(intent);
           }
         }
-       
       }
       if (cmd == "3")
       {
@@ -121,41 +129,55 @@ void loop()
             store->add(intent);
           }
         }
-       
       }
       if (cmd == "4")
+      {
+      }
+      if (cmd == "5")
       {
         for (size_t i{}; i < pinsG.size(); ++i)
         {
 
           ScheduledIntent intent{};
           intent.intent.targetID = TargetRef::make(TargetType::PIN, pinsG[i]->get_id());
-          intent.intent.type = ActionType::OFF;
+          intent.intent.type = ActionType::DISABLE_TOGGLE;
           intent.source = IntentSource::USER;
           intent.createdAt = myclock.getEpochMillis();
           store->add(intent);
         }
-      
       }
-      if (cmd == "5")
-      {
-        printRAM();
-        Serial.print("[INFO] размер магазина ");
-        Serial.print(store->size());
-        Serial.println(" намериний");
-       
-      }
-
       if (cmd == "6")
       {
-        store->clear();
+
         printRAM();
         Serial.print("[INFO] размер магазина ");
         Serial.print(store->size());
         Serial.println(" намериний");
-       
       }
+      if (cmd == "7")
+      {
+        printRAM();
+        Serial.print("[INFO] размер магазина ");
+        Serial.print(store->size());
+        Serial.println(" намериний");
+        store->clear();
+      }
+      if (cmd == "8")
+      {
+        for (size_t i{}; i < pinsG.size(); ++i)
+        {
 
+          ScheduledIntent intent{};
+          intent.intent.targetID = TargetRef::make(TargetType::PIN, pinsG[i]->get_id());
+          intent.life = LifetimeType::ONESHOT;
+          intent.schedule.startTime = myclock.getEpochMillis() + 10000;
+          intent.schedule.endTime = myclock.getEpochMillis() + 50000;
+          intent.intent.type = ActionType::ON;
+          intent.source = IntentSource::USER;
+          intent.createdAt = myclock.getEpochMillis();
+          store->add(intent);
+        }
+      }
       cmd = ""; // очистить буфер
     }
     else

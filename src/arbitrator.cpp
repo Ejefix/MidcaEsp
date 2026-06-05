@@ -15,7 +15,7 @@ void Arbitrator::begin()
         auto &targetID = it->first;
         uint16_t id = TargetRef::getId(targetID);
         TargetType type = TargetRef::getType(targetID);
-       
+
         const auto &vec = it->second;
         switch (type)
         {
@@ -53,12 +53,90 @@ void Arbitrator::beginPINtarget(const std::vector<ScheduledIntentID> &vec) const
             continue;
         }
         ScheduledIntent candidate = *snap;
-        if (store.isFinalState(candidate.state) && !resolve_lifecycle(candidate))
+        if (store.isFinalState(candidate.state))
         {
             continue;
         }
+        auto answer = resolve_lifecycle(candidate);
+        if (candidate.rezult.rezult == ExecuteResult::NONE)
+        {
+            if (candidate.life != LifetimeType::ONCE_TRY && candidate.life != LifetimeType::UNENDING)
+            {
+                if (answer == LifecycleResolution::WAIT)
+                {
+                    continue;
+                }
+                if (answer == LifecycleResolution::EXPIRED)
+                {
+                    ExecuteMeta rezult{candidate.rezult};
+                    rezult.reason = IntentFailArbitrator::TIME_EXPIRED_BEFORE;
+                    store.setState(candidate.id, IntentState::STOP, candidate.rezult);
+                    continue;
+                }
+            }
+        }
+        else
+        {
+            switch (candidate.life)
+            {
+            case LifetimeType::ONCE_TRY:
+                store.setState(candidate.id, IntentState::DONE, candidate.rezult);
+                continue;
+
+            case LifetimeType::ONESHOT:
+                if (answer == LifecycleResolution::EXECUTE)
+                {
+                    break;
+                }
+                if (answer == LifecycleResolution::EXPIRED)
+                {
+                    if (isExecutionFinished(candidate))
+                    {
+                        store.setState(candidate.id, IntentState::DONE, candidate.rezult);
+                    }
+                    else
+                    {
+                        ExecuteMeta rezult{candidate.rezult};
+                        rezult.reason = IntentFailArbitrator::TIME_EXPIRED_BEFORE;
+                        store.setState(candidate.id, IntentState::STOP, candidate.rezult);
+                    }
+                    continue;
+                }
+            case LifetimeType::REPEAT:
+                if (answer == LifecycleResolution::EXECUTE)
+                {
+                    break;
+                }
+                if (answer == LifecycleResolution::EXPIRED)
+                {
+                    if (isExecutionFinished(candidate))
+                    {
+                        store.setState(candidate.id, IntentState::PAUSED, candidate.rezult);
+                    }
+                    else
+                    {
+                        ExecuteMeta rezult{candidate.rezult};
+                        rezult.reason = IntentFailArbitrator::TIME_EXPIRED_BEFORE;
+                        store.setState(candidate.id, IntentState::PAUSED, candidate.rezult);
+                    }
+                    continue;
+                }
+            case LifetimeType::UNENDING:
+                if (isExecutionFinished(candidate))
+                {
+                    store.setState(candidate.id, IntentState::ACTIVE, candidate.rezult);
+                    continue;
+                }
+                else
+                {
+                    break;
+                }
+            }
+        }
+
         switch (candidate.intent.type)
         {
+        case ActionType::ENABLE_TOGGLE:
         case ActionType::ON:
         case ActionType::OFF:
         case ActionType::TOGGLE:
@@ -71,7 +149,7 @@ void Arbitrator::beginPINtarget(const std::vector<ScheduledIntentID> &vec) const
             }
             else
             {
-
+                
                 if (candidatefirst.source == IntentSource::USER &&
                     candidate.source == IntentSource::USER &&
                     candidatefirst.urgency == candidate.urgency)
@@ -84,7 +162,7 @@ void Arbitrator::beginPINtarget(const std::vector<ScheduledIntentID> &vec) const
                 }
             }
             break;
-
+        case ActionType::ENABLE_FADE:
         case ActionType::FADE:
 
             if (!second)
@@ -123,7 +201,6 @@ void Arbitrator::beginPINtarget(const std::vector<ScheduledIntentID> &vec) const
 
     if (first)
     {
-
         if (candidatefirst.state == IntentState::ACTIVE)
         {
             store.setState(candidatefirst.id, IntentState::RUNNING, candidatefirst.rezult);
@@ -138,55 +215,40 @@ void Arbitrator::beginPINtarget(const std::vector<ScheduledIntentID> &vec) const
         }
     }
 }
-bool Arbitrator::resolve_lifecycle(const ScheduledIntent &candidate) const
+LifecycleResolution Arbitrator::resolve_lifecycle(const ScheduledIntent &candidate) const
 {
     auto time = myclock.getEpochMillis();
     const auto &sched = candidate.schedule;
 
-    // Проверка расписания (ОДНА логика)
-    bool isTimeValid = false;
-    if (candidate.life == LifetimeType::ONESHOT)
+    if (time >= sched.startTime && time <= sched.endTime)
     {
-        isTimeValid = (sched.startTime == sched.endTime) ||
-                      (sched.startTime <= time && time <= sched.endTime);
+        return LifecycleResolution::EXECUTE;
     }
-    else // REPEAT
+
+    // Ещё не началось
+    if (time < sched.startTime)
     {
-        isTimeValid = (sched.startTime <= time && time <= sched.endTime);
+        return LifecycleResolution::WAIT;
     }
-    if (isTimeValid)
+    return LifecycleResolution::EXPIRED;
+}
+
+bool Arbitrator::isExecutionFinished(const ScheduledIntent &candidate) const
+{
+    switch (candidate.rezult.rezult)
+    {
+    case ExecuteResult::SUCCESS:
+    case ExecuteResult::SUCCESS_OVERRIDE_EQUAL_PRIORITY:
+    case ExecuteResult::SUCCESS_OVERRIDE_LOWER_PRIORITY:
         return true;
-    if (sched.startTime > time)
-    {
+    case ExecuteResult::NONE:
+    case ExecuteResult::BLOCKED_BY_HIGHER_PRIORITY:
         return false;
+        break;
+    case ExecuteResult::INVALID_PAYLOAD:
+    case ExecuteResult::DRIVER_NOT_FOUND:
+    case ExecuteResult::UNSUPPORTED_ACTION:
+    default:
+        return true;
     }
-
-    IntentState state{};
-    if (candidate.life == LifetimeType::REPEAT)
-    {
-        store.moveToNextDay(candidate.id);
-        state = IntentState::PAUSED;
-    }
-    else
-    {
-        state = IntentState::DONE;
-    }
-    ExecuteMeta result{candidate.rezult};
-
-    if (candidate.state == IntentState::RUNNING_ACTIVE)
-    {
-        store.setState(candidate.id, state, result);
-        return false;
-    }
-    if (candidate.state == IntentState::RETRY_RUNNING)
-    {
-        result.reason = IntentFailArbitrator::BLOCKED_BY_OTHER_INTENT;
-    }
-    else
-    {
-        result.reason = IntentFailArbitrator::TIME_EXPIRED_BEFORE_FIRST_RUN;
-    }
-
-    store.setState(candidate.id, state, result);
-    return false;
 }
