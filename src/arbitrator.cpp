@@ -15,28 +15,12 @@ void Arbitrator::begin()
         auto &targetID = it->first;
         uint16_t id = TargetRef::getId(targetID);
         TargetType type = TargetRef::getType(targetID);
-
         const auto &vec = it->second;
-        switch (type)
-        {
-        case TargetType::DEVICE:
-            /* code */
-            break;
-        case TargetType::PIN:
-            beginPINtarget(vec);
-            break;
-        case TargetType::INTENT:
-            break;
-        default:
-            break;
-        }
+        beginTarget(vec);
     }
 }
 
-void Arbitrator::beginINTENTtarget(const ScheduledIntent *target, const std::vector<ScheduledIntentID> &vec) const
-{
-}
-void Arbitrator::beginPINtarget(const std::vector<ScheduledIntentID> &vec) const
+void Arbitrator::beginTarget(const std::vector<ScheduledIntentID> &vec) const
 {
 
     ScheduledIntent candidatefirst{};
@@ -69,14 +53,28 @@ void Arbitrator::beginPINtarget(const std::vector<ScheduledIntentID> &vec) const
                 if (answer == LifecycleResolution::EXPIRED)
                 {
                     ExecuteMeta rezult{candidate.rezult};
-                    rezult.reason = IntentFailArbitrator::TIME_EXPIRED_BEFORE;
-                    store.setState(candidate.id, IntentState::STOP, candidate.rezult);
+                    rezult.reason = IntentFailArbitrator::BLOCKED_BY_OTHER_INTENT;
+                    if (candidate.life == LifetimeType::REPEAT)
+                    {
+                        store.moveToNextDay(candidate.id);
+                        store.setState(candidate.id, IntentState::ACTIVE, rezult);
+                    }
+                    else
+                    {
+                        store.setState(candidate.id, IntentState::STOP, rezult);
+                    }
+
                     continue;
                 }
             }
         }
         else
         {
+            if (isExecutionFAILED(candidate))
+            {
+                store.setState(candidate.id, IntentState::FAILED, candidate.rezult);
+                continue;
+            }
             switch (candidate.life)
             {
             case LifetimeType::ONCE_TRY:
@@ -84,82 +82,55 @@ void Arbitrator::beginPINtarget(const std::vector<ScheduledIntentID> &vec) const
                 continue;
 
             case LifetimeType::ONESHOT:
+            {
                 if (answer == LifecycleResolution::EXECUTE)
                 {
                     break;
                 }
                 if (answer == LifecycleResolution::EXPIRED)
                 {
-                    if (isExecutionFinished(candidate))
-                    {
-                        store.setState(candidate.id, IntentState::DONE, candidate.rezult);
-                    }
-                    else
-                    {
-                        ExecuteMeta rezult{candidate.rezult};
-                        rezult.reason = IntentFailArbitrator::TIME_EXPIRED_BEFORE;
-                        store.setState(candidate.id, IntentState::STOP, candidate.rezult);
-                    }
+                    store.setState(candidate.id, IntentState::DONE, candidate.rezult);
                     continue;
-                }
-            case LifetimeType::REPEAT:
-                if (answer == LifecycleResolution::EXECUTE)
-                {
-                    break;
-                }
-                if (answer == LifecycleResolution::EXPIRED)
-                {
-                    if (isExecutionFinished(candidate))
-                    {
-                        store.setState(candidate.id, IntentState::PAUSED, candidate.rezult);
-                    }
-                    else
-                    {
-                        ExecuteMeta rezult{candidate.rezult};
-                        rezult.reason = IntentFailArbitrator::TIME_EXPIRED_BEFORE;
-                        store.setState(candidate.id, IntentState::PAUSED, candidate.rezult);
-                    }
-                    continue;
-                }
-            case LifetimeType::UNENDING:
-                if (isExecutionFinished(candidate))
-                {
-                    store.setState(candidate.id, IntentState::ACTIVE, candidate.rezult);
-                    continue;
-                }
-                else
-                {
-                    break;
                 }
             }
+            case LifetimeType::REPEAT:
+            {
+                if (answer == LifecycleResolution::EXECUTE)
+                {
+                    break;
+                }
+                if (answer == LifecycleResolution::EXPIRED)
+                {
+                    store.moveToNextDay(candidate.id);
+                    ExecuteMeta rezult{candidate.rezult};
+                    rezult.reason = IntentFailArbitrator::TIME_EXPIRED_AFTER_ATTEMPTS;
+                    store.setState(candidate.id, IntentState::ACTIVE, rezult);
+                    continue;
+                }
+            }
+            case LifetimeType::UNENDING:
+                break;
+            }
         }
-
         switch (candidate.intent.type)
         {
         case ActionType::ENABLE_TOGGLE:
         case ActionType::ON:
         case ActionType::OFF:
         case ActionType::TOGGLE:
-
             if (!first)
             {
                 first = true;
                 candidatefirst = candidate;
+                if (candidatefirst.state == IntentState::ACTIVE)
+                {
+                    store.setState(candidatefirst.id, IntentState::RUNNING, candidatefirst.rezult);
+                }
                 continue;
             }
             else
             {
-                
-                if (candidatefirst.source == IntentSource::USER &&
-                    candidate.source == IntentSource::USER &&
-                    candidatefirst.urgency == candidate.urgency)
-                {
-
-                    ExecuteMeta rezult{};
-                    rezult.reason = IntentFailArbitrator::OVERRIDE_EQUAL_PRIORITY;
-                    rezult.blockingIntentID = candidatefirst.id;
-                    store.setState(candidate.id, IntentState::STOP, rezult);
-                }
+                deferOrOverride(candidatefirst, candidate);
             }
             break;
         case ActionType::ENABLE_FADE:
@@ -169,25 +140,25 @@ void Arbitrator::beginPINtarget(const std::vector<ScheduledIntentID> &vec) const
             {
                 second = true;
                 candidatesecond = candidate;
+                if (candidatesecond.state == IntentState::ACTIVE)
+                {
+                    store.setState(candidatesecond.id, IntentState::RUNNING, candidatesecond.rezult);
+                }
                 continue;
             }
             else
             {
-
-                if (candidatesecond.source == IntentSource::USER &&
-                    candidate.source == IntentSource::USER &&
-                    candidatesecond.urgency == candidate.urgency)
-                {
-
-                    ExecuteMeta rezult{};
-                    rezult.reason = IntentFailArbitrator::OVERRIDE_EQUAL_PRIORITY;
-                    rezult.blockingIntentID = candidatesecond.id;
-
-                    store.setState(candidate.id, IntentState::STOP, rezult);
-                }
+                deferOrOverride(candidatesecond, candidate);
             }
             break;
-
+        case ActionType::CONNECT:
+        case ActionType::DISCONNECT:
+        case ActionType::ERASE:
+            if (candidate.state == IntentState::ACTIVE)
+            {
+                store.setState(candidate.id, IntentState::RUNNING, candidate.rezult);
+            }
+            break;
         default:
         {
             Serial.println("[Arbiter] UNSUPPORTED ACTION TYPE");
@@ -196,22 +167,6 @@ void Arbitrator::beginPINtarget(const std::vector<ScheduledIntentID> &vec) const
             store.setState(candidate.id, IntentState::FAILED, rezult);
             break;
         }
-        }
-    }
-
-    if (first)
-    {
-        if (candidatefirst.state == IntentState::ACTIVE)
-        {
-            store.setState(candidatefirst.id, IntentState::RUNNING, candidatefirst.rezult);
-        }
-    }
-
-    if (second)
-    {
-        if (candidatesecond.state == IntentState::ACTIVE)
-        {
-            store.setState(candidatesecond.id, IntentState::RUNNING, candidatesecond.rezult);
         }
     }
 }
@@ -232,23 +187,38 @@ LifecycleResolution Arbitrator::resolve_lifecycle(const ScheduledIntent &candida
     }
     return LifecycleResolution::EXPIRED;
 }
-
-bool Arbitrator::isExecutionFinished(const ScheduledIntent &candidate) const
+bool Arbitrator::isExecutionFAILED(const ScheduledIntent &candidate) const
 {
     switch (candidate.rezult.rezult)
     {
     case ExecuteResult::SUCCESS:
     case ExecuteResult::SUCCESS_OVERRIDE_EQUAL_PRIORITY:
     case ExecuteResult::SUCCESS_OVERRIDE_LOWER_PRIORITY:
-        return true;
     case ExecuteResult::NONE:
     case ExecuteResult::BLOCKED_BY_HIGHER_PRIORITY:
         return false;
-        break;
-    case ExecuteResult::INVALID_PAYLOAD:
-    case ExecuteResult::DRIVER_NOT_FOUND:
-    case ExecuteResult::UNSUPPORTED_ACTION:
     default:
         return true;
+    }
+}
+
+void Arbitrator::deferOrOverride(const ScheduledIntent &winner, const ScheduledIntent &loser) const
+{
+    ExecuteMeta rezult{loser.rezult};
+    if (winner.source == IntentSource::USER &&
+        loser.source == IntentSource::USER &&
+        winner.urgency == loser.urgency)
+    {
+
+        rezult.reason = IntentFailArbitrator::OVERRIDE_EQUAL_PRIORITY;
+        rezult.blockingIntentIDArbitrator = winner.id;
+
+        store.setState(loser.id, IntentState::STOP, rezult);
+    }
+    else
+    {
+        rezult.reason = IntentFailArbitrator::DEFERRED_BY_ARBITRATOR;
+        rezult.blockingIntentIDArbitrator = winner.id;
+        store.setState(loser.id, IntentState::ACTIVE, rezult);
     }
 }

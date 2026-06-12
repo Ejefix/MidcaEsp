@@ -5,8 +5,8 @@
 
 const uint64_t one_day = 24ULL * 60ULL * 60ULL * 1000ULL;
 bool SENSOR::changed_flags{false};
-SENSOR::SENSOR(IGpioPin *gpio_, unsigned int id_)
-    : gpio(gpio_), id(id_)
+SENSOR::SENSOR(IGpioPin *gpio_, uint16_t id_)
+    : IInputDevice (id_) , gpio(gpio_)
 {
 
   path += String(id);
@@ -40,38 +40,20 @@ InputEvent SENSOR::event()
 }
 DeviceType SENSOR::type()
 {
-    return DeviceType::Sensor;
+  return DeviceType::Sensor;
 }
-unsigned int SENSOR::get_id() const
+unsigned long SENSOR::get_interval() const
 {
-  return id;
+    return time_off;
 }
-void SENSOR::set_status(bool act)
-{
-  status = act;
-  save();
-   SENSOR::changed_flags = true;
-}
-void SENSOR::push_script_time(const std::pair<unsigned long long, unsigned long long> &time)
-{
-  if (time.first == 0)
-  {
-    script_time.first = 1;
-    script_time.second = 1;
-    return;
-  }
-  script_time = time;
-  SENSOR::changed_flags = true;
-}
+
 
 void SENSOR::fill_json(JsonArray &arr) const
 {
   JsonObject obj = arr.add<JsonObject>();
-  obj["off"] = time_off_;
+  obj["off"] = time_off;
   obj["time"] = time_activ;
   obj["status"] = status;
-  obj["reactF"] = script_time.first;
-  obj["reactS"] = script_time.second;
 }
 
 void SENSOR::save() const
@@ -123,14 +105,10 @@ void SENSOR::load()
         serializeJson(obj["off"], Serial);
         serializeJson(obj["time"], Serial);
         serializeJson(obj["status"], Serial);
-        serializeJson(obj["reactF"], Serial);
-        serializeJson(obj["reactS"], Serial);
-
-        time_off_ = obj["off"] | 10000; // если ключа нет -> 10000
+       
+        time_off = obj["off"] | 10000; // если ключа нет -> 10000
         time_activ = obj["time"] | 0;
         status = obj["status"] | true;
-        script_time.first = obj["reactF"] | 0;
-        script_time.second = obj["reactS"] | 0;
         break;
       }
     }
@@ -138,15 +116,60 @@ void SENSOR::load()
   Serial.print("[INF] JSON загружен: для ");
   Serial.println(id);
 }
-void SENSOR::set_interval(const unsigned long &time_off)
+
+DeviceResult SENSOR::executeAction(const ScheduledIntent &intent)
 {
-  time_off_ = time_off;
-  save();
-   SENSOR::changed_flags = true;
-}
-unsigned long SENSOR::get_interval() const
-{
-    return this->time_off_;
+  switch (intent.intent.type)
+  {
+  case ActionType::ON:
+    status = true;
+    return DeviceResult::SUCCESS;
+  case ActionType::OFF:
+    status = false;
+    return DeviceResult::SUCCESS;
+  case ActionType::TOGGLE:
+    status = !status;
+    return DeviceResult::SUCCESS;
+  case ActionType::FADE:
+  {
+    auto fade = std::get_if<FadePayload>(&intent.intent.payload);
+    if (!fade)
+      return DeviceResult::INVALID_PAYLOAD;
+    time_off = fade->durationMs;
+    return DeviceResult::SUCCESS;
+  }
+  case ActionType::CONNECT:
+  {
+    auto fade = std::get_if<ConnectPayload>(&intent.intent.payload);
+    if (!fade)
+      return DeviceResult::INVALID_PAYLOAD;
+    PinId pinID = fade->obj;
+    DeviceId device = intent.intent.targetID;
+    if (device_binder->connect(device, pinID))
+    {
+      return DeviceResult::SUCCESS;
+    }
+    return DeviceResult::INVALID_PAYLOAD;
+  }
+  case ActionType::DISCONNECT:
+  {
+    auto fade = std::get_if<ConnectPayload>(&intent.intent.payload);
+    if (!fade)
+      return DeviceResult::INVALID_PAYLOAD;
+    PinId pinID = fade->obj;
+    DeviceId device = intent.intent.targetID;
+    device_binder->disconnect(device, pinID);
+    return DeviceResult::SUCCESS;
+  }
+  case ActionType::ERASE:
+  {
+    DeviceId device = intent.intent.targetID;
+    device_binder->disconnect(device);
+    return DeviceResult::SUCCESS;
+  }
+  default:
+    return DeviceResult::UNSUPPORTED_ACTION;
+  }
 }
 bool SENSOR::get_activ()
 {
@@ -157,34 +180,18 @@ bool SENSOR::get_activ()
   auto time = myclock.getEpochMillis();
   if (active)
   {
-    time_on = time_now;
+    
     time_activ = time;
     if (!status && time_now - changed_flags_time > 30000)
     {
       changed_flags_time = time_now;
-       SENSOR::changed_flags = true;
-    }
-  }
-  if (script_time.second != script_time.first)
-  {
-   
-    while (script_time.second < time)
-    {
-      script_time.first += one_day;
-      script_time.second += one_day;
-    }
-    if (script_time.first <= time && time <= script_time.second)
-    {
-      return false; // не реагируем в это время
+      SENSOR::changed_flags = true;
     }
   }
   if (!status) // принудительно выключена реакция
   {
     return false;
   }
-  if (time_now - time_on < time_off_) // ещё не прошло время отключения
-  {
-    return true;
-  }
+
   return active;
 }

@@ -20,15 +20,16 @@ public:
 
 private:
     ScheduledIntentStore &store;
-    void beginINTENTtarget(const ScheduledIntent *target, const std::vector<ScheduledIntentID> &vec) const;
-
+    
     /*
      * Первый подходящий кандидат становится исполнителем группы.
      * Остальные не выбираются как исполнитель.
      */
-    void beginPINtarget(const std::vector<ScheduledIntentID> &vec) const;
+    void beginTarget(const std::vector<ScheduledIntentID> &vec) const;
 
     // отчает на вопрос, имеет ли права перейти сейчас в статус выполнения
     LifecycleResolution resolve_lifecycle(const ScheduledIntent &candidate) const;
-    bool isExecutionFinished(const ScheduledIntent &candidate) const;
+    bool isExecutionFAILED(const ScheduledIntent &candidate) const;
+    //схлопывание или откладывание
+    void deferOrOverride( const ScheduledIntent &winner, const ScheduledIntent &loser)const;
 };

@@ -106,12 +106,12 @@ int CommandExecutor::playSensor(const String &packet) const
   String comm = packet.substring(8, 12);
   if (comm == Skeleton::commands[Skeleton::on])
   {
-    sensor->set_status(true); // включить PIR
+   
     return 0;
   }
   if (comm == Skeleton::commands[Skeleton::off])
   {
-    sensor->set_status(false); // выключить PIR
+    
     return 0;
   }
   if (comm == Skeleton::commands[Skeleton::time_off])
@@ -126,7 +126,7 @@ int CommandExecutor::playSensor(const String &packet) const
       }
     }
     unsigned long timeOff = strtoul(timeStr.c_str(), nullptr, 10);
-    sensor->set_interval(timeOff);
+    
     return 0;
   }
   auto pinNumber = packet.substring(12);
@@ -144,7 +144,7 @@ int CommandExecutor::playSensor(const String &packet) const
     }
     else
     {
-      sensor->push_script_time({0, 0});
+      
       Serial.println("[INF] Удалили время сценария в sensor ");
       return 0;
     }
@@ -154,7 +154,7 @@ int CommandExecutor::playSensor(const String &packet) const
       int start = end + 4;
       auto second = times.substring(start);
       value2 = strtoull(second.c_str(), nullptr, 10);
-      sensor->push_script_time({value, value2});
+      
       Serial.print("[INF] Добавили время сценария в sensor ");
       Serial.print(value);
       Serial.print(" | ");
@@ -181,7 +181,9 @@ String CommandExecutor::full_status_json() const
   }
   JsonArray deviceJson = data["DEVICE"].to<JsonArray>();
   device_registry->fill_json(deviceJson);
-
+  JsonArray storeJson = data["STORE"].to<JsonArray>();
+  store->fill_json(storeJson);
+  
   String out;
   serializeJson(mainDoc, out); // строка для передачи
   size_t size = strlen(out.c_str());

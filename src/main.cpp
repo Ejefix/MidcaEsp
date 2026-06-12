@@ -132,16 +132,29 @@ void loop()
       }
       if (cmd == "4")
       {
-      }
-      if (cmd == "5")
-      {
         for (size_t i{}; i < pinsG.size(); ++i)
         {
 
           ScheduledIntent intent{};
           intent.intent.targetID = TargetRef::make(TargetType::PIN, pinsG[i]->get_id());
-          intent.intent.type = ActionType::DISABLE_TOGGLE;
+          intent.intent.type = ActionType::OFF;
           intent.source = IntentSource::USER;
+          intent.createdAt = myclock.getEpochMillis();
+          store->add(intent);
+        }
+      }
+      if (cmd == "5")
+      {
+        for (size_t i{}; i < pinsG.size()/2; ++i)
+        {
+
+          ScheduledIntent intent{};
+          intent.intent.targetID = TargetRef::make(TargetType::PIN, pinsG[i]->get_id());
+          intent.life = LifetimeType::ONESHOT;
+          intent.schedule.startTime = myclock.getEpochMillis();
+          intent.schedule.endTime = myclock.getEpochMillis() + 100000;
+          intent.intent.type = ActionType::OFF;
+          intent.source = IntentSource::SCENARIO;
           intent.createdAt = myclock.getEpochMillis();
           store->add(intent);
         }
@@ -160,11 +173,10 @@ void loop()
         Serial.print("[INFO] размер магазина ");
         Serial.print(store->size());
         Serial.println(" намериний");
-        store->clear();
       }
       if (cmd == "8")
       {
-        for (size_t i{}; i < pinsG.size(); ++i)
+        for (size_t i{}; i < pinsG.size()/2; ++i)
         {
 
           ScheduledIntent intent{};
@@ -173,7 +185,7 @@ void loop()
           intent.schedule.startTime = myclock.getEpochMillis() + 10000;
           intent.schedule.endTime = myclock.getEpochMillis() + 50000;
           intent.intent.type = ActionType::ON;
-          intent.source = IntentSource::USER;
+          intent.source = IntentSource::SCENARIO;
           intent.createdAt = myclock.getEpochMillis();
           store->add(intent);
         }
@@ -199,12 +211,13 @@ void loop()
       pinsG[i]->begin();
     }
   }
-  if (PIN::changed_flags || SENSOR::changed_flags || DeviceRegistry::changed_flags)
+  
+  if (PIN::changed_flags)
   {
-    // PIN::changed_flags = false;
-    // SENSOR::changed_flags = false;
-    // DeviceRegistry::changed_flags = false;
-    // updateDATA = true;
+     PIN::changed_flags = false;
+     SENSOR::changed_flags = false;
+     DeviceRegistry::changed_flags = false;
+     updateDATA = true;
   }
   vTaskDelay(2);
 }
