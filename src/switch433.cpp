@@ -1,7 +1,7 @@
 #include "switch433.h"
+#include "globals.h"
 
-SwitchMechanics::SwitchMechanics(IGpioPin *gpio_)
-    : gpio(gpio_)
+SwitchMechanics::SwitchMechanics(IGpioPin *gpio_, uint16_t id_) : IInputDevice(id_), gpio(gpio_)
 {
   status = gpio->read();
 }
@@ -25,10 +25,48 @@ InputEvent SwitchMechanics::event()
 
 DeviceType SwitchMechanics::type()
 {
-    return DeviceType::Switch;
+  return DeviceType::Switch;
 }
 
-SwitchButton::SwitchButton(IGpioPin *gpio_) : gpio(gpio_)
+DeviceResult SwitchMechanics::executeAction(const ScheduledIntent &intent)
+{
+  switch (intent.intent.type)
+  {
+  case ActionType::CONNECT:
+  {
+    auto fade = std::get_if<ConnectPayload>(&intent.intent.payload);
+    if (!fade)
+      return DeviceResult::INVALID_PAYLOAD;
+    PinId pinID = fade->obj;
+    DeviceId device = intent.intent.targetID;
+    if (device_binder->connect(device, pinID))
+    {
+      return DeviceResult::SUCCESS;
+    }
+    return DeviceResult::INVALID_PAYLOAD;
+  }
+  case ActionType::DISCONNECT:
+  {
+    auto fade = std::get_if<ConnectPayload>(&intent.intent.payload);
+    if (!fade)
+      return DeviceResult::INVALID_PAYLOAD;
+    PinId pinID = fade->obj;
+    DeviceId device = intent.intent.targetID;
+    device_binder->disconnect(device, pinID);
+    return DeviceResult::SUCCESS;
+  }
+  case ActionType::ERASE:
+  {
+    DeviceId device = intent.intent.targetID;
+    device_binder->disconnect(device);
+    return DeviceResult::SUCCESS;
+  }
+  default:
+    return DeviceResult::UNSUPPORTED_ACTION;
+  }
+}
+
+SwitchButton::SwitchButton(IGpioPin *gpio_, uint16_t id_) : IInputDevice(id_), gpio(gpio_)
 {
 }
 
@@ -83,5 +121,43 @@ InputEvent SwitchButton::event()
 
 DeviceType SwitchButton::type()
 {
-    return DeviceType::Button;
+  return DeviceType::Button;
+}
+
+DeviceResult SwitchButton::executeAction(const ScheduledIntent &intent)
+{
+  switch (intent.intent.type)
+  {
+  case ActionType::CONNECT:
+  {
+    auto fade = std::get_if<ConnectPayload>(&intent.intent.payload);
+    if (!fade)
+      return DeviceResult::INVALID_PAYLOAD;
+    PinId pinID = fade->obj;
+    DeviceId device = intent.intent.targetID;
+    if (device_binder->connect(device, pinID))
+    {
+      return DeviceResult::SUCCESS;
+    }
+    return DeviceResult::INVALID_PAYLOAD;
+  }
+  case ActionType::DISCONNECT:
+  {
+    auto fade = std::get_if<ConnectPayload>(&intent.intent.payload);
+    if (!fade)
+      return DeviceResult::INVALID_PAYLOAD;
+    PinId pinID = fade->obj;
+    DeviceId device = intent.intent.targetID;
+    device_binder->disconnect(device, pinID);
+    return DeviceResult::SUCCESS;
+  }
+  case ActionType::ERASE:
+  {
+    DeviceId device = intent.intent.targetID;
+    device_binder->disconnect(device);
+    return DeviceResult::SUCCESS;
+  }
+  default:
+    return DeviceResult::UNSUPPORTED_ACTION;
+  }
 }

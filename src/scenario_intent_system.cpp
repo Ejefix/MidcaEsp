@@ -24,6 +24,7 @@ ScheduledIntentID ScheduledIntentStore::add(ScheduledIntent &intent)
     {
         intent.createdAt = myclock.getEpochMillis();
     }
+    ++intent.versionStore;
     store[intent.id] = intent;
     auto &vec = scheduler[intent.intent.targetID];
     if (vec.capacity() - vec.size() < 10)
@@ -58,10 +59,6 @@ ScheduledIntentID ScheduledIntentStore::add(ScheduledIntent &intent)
     return intent.id;
 }
 
-void ScheduledIntentStore::update()
-{
-}
-
 bool ScheduledIntentStore::setState(ScheduledIntentID id, IntentState state, ExecuteMeta rezult)
 {
     auto it = store.find(id);
@@ -78,6 +75,7 @@ bool ScheduledIntentStore::setState(ScheduledIntentID id, IntentState state, Exe
         it->second.updatedAt = myclock.getEpochMillis();
         it->second.state = state;
         it->second.rezult = rezult;
+        it->second.versionStore++;
         switch (state)
         {
         case IntentState::RUNNING:
@@ -87,7 +85,6 @@ bool ScheduledIntentStore::setState(ScheduledIntentID id, IntentState state, Exe
         case IntentState::ACTIVE:
             break;
         case IntentState::DONE:
-            it->second.executedAt = myclock.getEpochMillis();
         case IntentState::PAUSED:
         case IntentState::STOP:
         case IntentState::FAILED:
@@ -161,6 +158,7 @@ bool ScheduledIntentStore::moveToNextDay(const ScheduledIntentID &id)
         Serial.print(id);
         Serial.println(" успешно обновил время дейсвия");
         it->second.updatedAt = myclock.getEpochMillis();
+        it->second.versionStore++;
         while (it->second.schedule.endTime < it->second.updatedAt)
         {
             it->second.schedule.startTime += one_day;
@@ -244,6 +242,17 @@ uint8_t ScheduledIntentStore::resolvePriority(const IntentSource &source, const 
     return score;
 }
 
+uint32_t ScheduledIntentStore::get_versionStore(ScheduledIntentID &id)
+{
+    auto it = store.find(id);
+
+    if (it != store.end())
+    {
+        return it->second.versionStore;
+    }
+    return {};
+}
+
 bool ScheduledIntentStore::setStateExecutor(ScheduledIntentID id, ExecuteResult res, ScheduledIntentID blockingIntentID)
 {
     auto it = store.find(id);
@@ -252,28 +261,45 @@ bool ScheduledIntentStore::setStateExecutor(ScheduledIntentID id, ExecuteResult 
     {
         if (isFinalState(it->second.state))
         {
-            Serial.print("[ScheduledIntentStore::moveToNextDay] Намериние ScheduledIntentID ");
+            Serial.print("[ScheduledIntentStore::setStateExecutor] Намериние ScheduledIntentID ");
             Serial.print(id);
             Serial.println(" не верный статус для обновления");
             return false;
         }
         it->second.updatedAt = myclock.getEpochMillis();
         it->second.rezult.rezult = res;
-        it->second.rezult.blockingIntentID = blockingIntentID;
+        it->second.rezult.blockingIntentIDResult = blockingIntentID;
+        it->second.executedAt = myclock.getEpochMillis();
+        it->second.versionStore++;
+        return true;
     }
     return false;
 }
 
+bool ScheduledIntentStore::setIntentCommand(ScheduledIntentID id, IntentCommand res, ScheduledIntentID initiatorID)
+{
+    auto it = store.find(id);
+
+    if (it != store.end())
+    {
+        if (isFinalState(it->second.state))
+        {
+            Serial.print("[ScheduledIntentStore::setIntentCommand] Намериние ScheduledIntentID ");
+            Serial.print(id);
+            Serial.println(" не верный статус для обновления");
+            return false;
+        }
+        it->second.updatedAt = myclock.getEpochMillis();
+        it->second.rezult.command = res;
+        it->second.rezult.initiatorID = initiatorID;
+        it->second.versionStore++;
+        return true;
+    }
+    return false;
+}
 size_t ScheduledIntentStore::size() const
 {
     return store.size();
-}
-
-void ScheduledIntentStore::clear()
-{
-    store.clear();
-    scheduler.clear();
-    running.clear();
 }
 
 void ScheduledIntentStore::printI()
@@ -303,6 +329,7 @@ bool Schedule::operator==(const Schedule &other) const
 {
     return startTime == other.startTime && endTime == other.endTime;
 }
+
 void ScheduledIntent::printF() const
 {
     Serial.println("===== ScheduledIntent ====="); // начало блока
@@ -311,81 +338,14 @@ void ScheduledIntent::printF() const
     Serial.println(id); // идентификатор intent
 
     Serial.print("State: ");
+    Serial.println(toString(state));
 
-    switch (state)
-    {
-
-    case IntentState::ACTIVE:
-        Serial.println("ACTIVE");
-        break;
-
-    case IntentState::RUNNING:
-        Serial.println("RUNNING");
-        break;
-    case IntentState::PAUSED:
-        Serial.println("PAUSED");
-        break;
-    case IntentState::STOP:
-        Serial.println("STOP");
-        break;
-    case IntentState::DONE:
-        Serial.println("DONE");
-        break;
-    case IntentState::FAILED:
-        Serial.println("FAILED");
-        break;
-    case IntentState::TO_DELETE:
-        Serial.println("DELETE");
-        break;
-    default:
-
-        Serial.println("UNKNOWN");
-        break;
-    }
     Serial.print("Source: ");
-
-    switch (source)
-    {
-    case IntentSource::IntentDEFAULT:
-        Serial.println("DEFAULT");
-        break;
-    case IntentSource::SENSOR:
-        Serial.println("SENSOR");
-        break;
-    case IntentSource::SCENARIO:
-        Serial.println("SCENARIO");
-        break;
-    case IntentSource::USER:
-        Serial.println("USER");
-        break;
-    case IntentSource::SYSTEM:
-        Serial.println("SYSTEM");
-        break;
-    default:
-        Serial.println("UNKNOWN");
-        break;
-    }
+    Serial.println(toString(source));
 
     Serial.print("Life: ");
+    Serial.println(toString(life));
 
-    switch (life)
-    {
-    case LifetimeType::ONCE_TRY:
-        Serial.println("ONCE_TRY");
-        break;
-    case LifetimeType::ONESHOT:
-        Serial.println("ONESHOT");
-        break;
-    case LifetimeType::REPEAT:
-        Serial.println("REPEAT");
-        break;
-    case LifetimeType::UNENDING:
-        Serial.println("UNENDING");
-        break;
-    default:
-        Serial.println("UNKNOWN");
-        break;
-    }
     Serial.print("CreatedAt: ");
     Serial.println(createdAt); // время создания
 
@@ -396,76 +356,330 @@ void ScheduledIntent::printF() const
     Serial.println(executedAt); // время выполнения
 
     Serial.print("ExecuteResult: ");
+    Serial.println(toString(rezult.rezult));
 
-    switch (rezult.rezult)
+    Serial.print("blockingIntentID Result: ");
+    Serial.println(rezult.blockingIntentIDResult);
+
+    Serial.print("IntentFailArbitrator: ");
+    Serial.println(toString(rezult.reason));
+
+    Serial.print("blockingIntentID Arbitrator: ");
+    Serial.println(rezult.blockingIntentIDArbitrator); // время выполнения
+    Serial.println("===========================");     // конец блока
+    delay(200);                                        // пауза 200 мс
+}
+
+void ScheduledIntentStore::fill_json(JsonArray &arr) const
+{
+    for (auto it = store.begin(); it != store.end(); ++it)
+    {
+        const auto &intent = it->second;
+        intent.fill_json(arr);
+    }
+}
+void ScheduledIntent::fill_json(JsonArray &arr) const
+{
+    JsonObject obj = arr.add<JsonObject>();
+
+    obj["id"] = id; // ID намерения
+    if (to_u8(life) != 0)
+        obj["li"] = to_u8(life); // тип жизни
+    if (to_u8(source) != 0)
+        obj["so"] = to_u8(source); // источник
+    if (to_u8(state) != 0)
+        obj["st"] = to_u8(state); // состояние
+    if (to_u8(urgency) != 0)
+        obj["ur"] = to_u8(urgency); // важность
+    if (createdAt != 0)
+        obj["cr"] = createdAt; // время создания
+    if (executedAt != 0)
+        obj["ex"] = executedAt; // время выполнения
+    if (updatedAt != 0)
+        obj["up"] = updatedAt; // последнее изменение
+    schedule.fill_json(obj);
+    intent.fill_json(obj);
+    rezult.fill_json(obj);
+}
+
+void ExecuteMeta::fill_json(JsonObject &obj) const
+{
+    if (to_u8(rezult) != 0)
+        obj["Res"] = to_u8(rezult);
+    if (blockingIntentIDResult != 0)
+        obj["IDR"] = blockingIntentIDResult;
+    if (to_u8(command) != 0)
+    {
+        obj["com"] = to_u8(command);
+        obj["ini"] = initiatorID;
+    }
+    if (to_u8(reason) != 0)
+        obj["Arb"] = to_u8(reason);
+    if (blockingIntentIDArbitrator != 0)
+        obj["IDA"] = blockingIntentIDArbitrator;
+}
+
+void Intent::fill_json(JsonObject &obj) const
+{
+
+    obj["Target"] = targetID;
+    if (to_u8(type) != 0)
+        obj["Action"] = to_u8(type);
+    auto fade = std::get_if<ConnectPayload>(&payload);
+    if (fade)
+    {
+        JsonArray arrJ = obj["Conn"].to<JsonArray>();
+        fade->fill_json(arrJ);
+        return;
+    }
+    auto fade_ = std::get_if<FadePayload>(&payload);
+    if (fade_)
+    {
+        JsonArray arrJ = obj["Fade"].to<JsonArray>();
+        fade_->fill_json(arrJ);
+        return;
+    }
+}
+
+void FadePayload::fill_json(JsonArray &arr) const
+{
+
+    JsonObject obj = arr.add<JsonObject>();
+    if (from != to)
+    {
+        obj["from"] = from;
+        obj["to"] = to;
+    }
+    if (durationMs != 0)
+        obj["time"] = durationMs;
+}
+
+void ConnectPayload::fill_json(JsonArray &arr) const
+{
+    JsonObject objJ = arr.add<JsonObject>();
+    objJ["obj"] = obj;
+}
+void Schedule::fill_json(JsonObject &obj) const
+{
+    if (startTime != endTime)
+    {
+        obj["start"] = startTime;
+        obj["end"] = endTime;
+    }
+}
+
+inline const char *toString(IntentState v)
+{
+    switch (v)
+    {
+    case IntentState::ACTIVE:
+        return "ACTIVE";
+    case IntentState::RUNNING:
+        return "RUNNING";
+    case IntentState::PAUSED:
+        return "PAUSED";
+    case IntentState::STOP:
+        return "STOP";
+    case IntentState::DONE:
+        return "DONE";
+    case IntentState::FAILED:
+        return "FAILED";
+    case IntentState::TO_DELETE:
+        return "TO_DELETE";
+    default:
+        return "UNKNOWN";
+    }
+}
+
+inline const char *toString(ExecuteResult v)
+{
+    switch (v)
     {
     case ExecuteResult::NONE:
-        Serial.println("NONE");
-        break;
+        return "NONE";
     case ExecuteResult::SUCCESS:
-        Serial.println("SUCCESS");
-        break;
+        return "SUCCESS";
 
     case ExecuteResult::SUCCESS_OVERRIDE_EQUAL_PRIORITY:
-        Serial.println("SUCCESS заменил intent равного приоритета");
-        break;
+        return "SUCCESS_OVERRIDE_EQUAL_PRIORITY";
 
     case ExecuteResult::SUCCESS_OVERRIDE_LOWER_PRIORITY:
-        Serial.println("SUCCESS вытеснил более слабый intent");
-        break;
+        return "SUCCESS_OVERRIDE_LOWER_PRIORITY";
 
     case ExecuteResult::BLOCKED_BY_HIGHER_PRIORITY:
-        Serial.println("BLOCKED заблокирован более сильным intent");
-        break;
+        return "BLOCKED_BY_HIGHER_PRIORITY";
 
     case ExecuteResult::INVALID_PAYLOAD:
-        Serial.println("payload не соответствует ActionType");
-        break;
+        return "INVALID_PAYLOAD";
 
     case ExecuteResult::DRIVER_NOT_FOUND:
-        Serial.println("отсутствует драйвер");
-        break;
+        return "DRIVER_NOT_FOUND";
 
     case ExecuteResult::UNSUPPORTED_ACTION:
-        Serial.println("действие не поддерживается");
-        break;
+        return "UNSUPPORTED_ACTION";
+
+    case ExecuteResult::FAIL_CAST:
+        return "FAIL_CAST";
+
+    case ExecuteResult::ERROR_LIFE:
+        return "ERROR_LIFE";
+
+    case ExecuteResult::ERROR_TARGET:
+        return "ERROR_TARGET";
 
     default:
-        Serial.println("UNKNOWN");
-        break;
+        return "UNKNOWN";
     }
-    Serial.print("IntentFailArbitrator: ");
-    switch (rezult.reason)
+}
+
+inline const char *toString(IntentCommand v)
+{
+    switch (v)
+    {
+    case IntentCommand::NONE:
+        return "NONE";
+    case IntentCommand::ACTIVE:
+        return "ACTIVE";
+    case IntentCommand::PAUSED:
+        return "PAUSED";
+    case IntentCommand::TO_DELETE:
+        return "TO_DELETE";
+    default:
+        return "UNKNOWN";
+    }
+}
+
+inline const char *toString(IntentFailArbitrator v)
+{
+    switch (v)
     {
     case IntentFailArbitrator::NONE:
-        Serial.println("NONE");
-        break;
+        return "NONE";
 
     case IntentFailArbitrator::TIME_EXPIRED_BEFORE:
-        Serial.println("время жизни intent истекло");
-        break;
+        return "TIME_EXPIRED_BEFORE";
 
     case IntentFailArbitrator::TIME_EXPIRED_AFTER_ATTEMPTS:
-        Serial.println("intent уже пытался выполняться , но время жизни intent истекло");
-        break;
+        return "TIME_EXPIRED_AFTER_ATTEMPTS";
 
     case IntentFailArbitrator::BLOCKED_BY_OTHER_INTENT:
-        Serial.println("не выполнен из-за блокировки другим intent (конфликт приоритетов)");
-        break;
+        return "BLOCKED_BY_OTHER_INTENT";
 
     case IntentFailArbitrator::OVERRIDE_EQUAL_PRIORITY:
-        Serial.println("заменил intent равного приоритета");
-        break;
+        return "OVERRIDE_EQUAL_PRIORITY";
+
+    case IntentFailArbitrator::DEFERRED_BY_ARBITRATOR:
+        return "DEFERRED_BY_ARBITRATOR";
 
     case IntentFailArbitrator::UNSUPPORTED_ACTION:
-        Serial.println("отсутствует драйвер");
-        break;
+        return "UNSUPPORTED_ACTION";
+
     default:
-        Serial.println("UNKNOWN");
-        break;
+        return "UNKNOWN";
     }
-    Serial.print("blockingIntentID: ");
-    Serial.println(rezult.blockingIntentID);       // время выполнения
-    Serial.println("==========================="); // конец блока
-    delay(1000);                                   // пауза 200 мс
+}
+
+inline const char *toString(ActionType v)
+{
+    switch (v)
+    {
+    case ActionType::ON:
+        return "ON";
+    case ActionType::OFF:
+        return "OFF";
+    case ActionType::TOGGLE:
+        return "TOGGLE";
+    case ActionType::FADE:
+        return "FADE";
+
+    case ActionType::CONNECT:
+        return "CONNECT";
+    case ActionType::DISCONNECT:
+        return "DISCONNECT";
+
+    case ActionType::PUSH:
+        return "PUSH";
+    case ActionType::ERASE:
+        return "ERASE";
+
+    case ActionType::DISABLE_TOGGLE:
+        return "DISABLE_TOGGLE";
+    case ActionType::DISABLE_FADE:
+        return "DISABLE_FADE";
+    case ActionType::ENABLE_TOGGLE:
+        return "ENABLE_TOGGLE";
+    case ActionType::ENABLE_FADE:
+        return "ENABLE_FADE";
+
+    default:
+        return "UNKNOWN";
+    }
+}
+
+inline const char *toString(LifetimeType v)
+{
+    switch (v)
+    {
+    case LifetimeType::ONCE_TRY:
+        return "ONCE_TRY";
+    case LifetimeType::ONESHOT:
+        return "ONESHOT";
+    case LifetimeType::REPEAT:
+        return "REPEAT";
+    case LifetimeType::UNENDING:
+        return "UNENDING";
+    default:
+        return "UNKNOWN";
+    }
+}
+
+inline const char *toString(TargetType v)
+{
+    switch (v)
+    {
+    case TargetType::PIN:
+        return "PIN";
+    case TargetType::DEVICE:
+        return "DEVICE";
+    case TargetType::INTENT:
+        return "INTENT";
+    default:
+        return "UNKNOWN";
+    }
+}
+
+inline const char *toString(IntentSource v)
+{
+    switch (v)
+    {
+    case IntentSource::IntentDEFAULT:
+        return "DEFAULT";
+    case IntentSource::SENSOR:
+        return "SENSOR";
+    case IntentSource::SCENARIO:
+        return "SCENARIO";
+    case IntentSource::USER:
+        return "USER";
+    case IntentSource::SYSTEM:
+        return "SYSTEM";
+    default:
+        return "UNKNOWN";
+    }
+}
+
+inline const char *toString(IntentUrgency v)
+{
+    switch (v)
+    {
+    case IntentUrgency::NORMAL:
+        return "NORMAL";
+    case IntentUrgency::INCREASED:
+        return "INCREASED";
+    case IntentUrgency::CRITICAL:
+        return "CRITICAL";
+    case IntentUrgency::EMERGENCY:
+        return "EMERGENCY";
+    default:
+        return "UNKNOWN";
+    }
 }

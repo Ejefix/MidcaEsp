@@ -3,7 +3,7 @@
 #include "switch433.h"
 #include <scenario_intent_system.h>
 bool DeviceRegistry::changed_flags{false};
-IInputDevice *DeviceFactory::create(uint8_t mcp_id, DeviceType type, uint8_t pin_, uint8_t id)
+IInputDevice *DeviceFactory::create(uint8_t mcp_id, DeviceType type, uint8_t pin_, uint16_t id)
 {
     if (mcp_id >= gpioSignal.size())
     {
@@ -22,11 +22,11 @@ IInputDevice *DeviceFactory::create(uint8_t mcp_id, DeviceType type, uint8_t pin
     }
     case DeviceType::Switch:
     {
-        return new SwitchMechanics(gpioSignal[mcp_id][pin_]);
+        return new SwitchMechanics(gpioSignal[mcp_id][pin_], id);
     }
     case DeviceType::Button:
     {
-        return new SwitchButton(gpioSignal[mcp_id][pin_]);
+        return new SwitchButton(gpioSignal[mcp_id][pin_], id);
     }
     }
     return nullptr;
@@ -210,8 +210,8 @@ DeviceBinder::DeviceBinder()
 
 bool DeviceBinder::connect(DeviceId device, PinId obj)
 {
-    
-    if(TargetRef::getType(device) != TargetType::DEVICE && !device_registry->get(TargetRef::getId(device)))
+
+    if (TargetRef::getType(device) != TargetType::DEVICE && !device_registry->get(TargetRef::getId(device)))
     {
         return false;
     }
@@ -222,7 +222,7 @@ bool DeviceBinder::connect(DeviceId device, PinId obj)
         for (const auto c : it->second)
         {
             if (c.first == obj)
-                return true; 
+                return true;
         }
     }
     data[device].push_back({obj, 0}); // добавляем connection в список устройства
@@ -230,7 +230,7 @@ bool DeviceBinder::connect(DeviceId device, PinId obj)
     Serial.print(device);
     Serial.print(", добали PinId ");
     Serial.println(obj);
-    return true; 
+    return true;
 }
 
 void DeviceBinder::disconnect(DeviceId device, PinId obj)
@@ -356,7 +356,7 @@ void DeviceBinder::begin()
                 if (store->extend(it_vec->second, endTime))
                 {
                     continue;
-                }     
+                }
             case InputEvent::RisingEdge:
                 intent.intent.type = ActionType::ON;
                 Serial.println("[DeviceBinder] Создал намериние ON");
@@ -367,6 +367,10 @@ void DeviceBinder::begin()
                 intent.intent.type = ActionType::TOGGLE;
                 Serial.println("[DeviceBinder] Создал намериние TOGGLE");
                 store->add(intent);
+                break;
+            case InputEvent::LongPress:
+                break;
+            case InputEvent::DoubleClick:
                 break;
             default:
                 break;

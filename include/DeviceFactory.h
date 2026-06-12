@@ -6,13 +6,10 @@
 #include <ArduinoJson.h>
 using DeviceId = uint32_t;
 
-
-
-
 class DeviceFactory
 {
 public: 
-    static IInputDevice *create(uint8_t mcp_id, DeviceType type, uint8_t pin_, uint8_t id);
+    static IInputDevice *create(uint8_t mcp_id, DeviceType type, uint8_t pin_, uint16_t id);
 };
 
 class DeviceRegistry
@@ -25,6 +22,7 @@ public:
     std::vector<std::pair<uint16_t, DeviceType>> get_ids() const;
     bool set_type(DeviceType type, uint16_t id);
     IInputDevice *get(uint16_t id);
+    
     void fill_json(JsonArray &arr) const;
     void save() const;
     void load();
@@ -59,6 +57,8 @@ public:
     void disconnect(DeviceId device);
     void disconnect(PinId obj);
     void disconnect();
+
+    // тут создаются намериния в зависимости от результата опроса девайса
     void begin() ;
 
 private:

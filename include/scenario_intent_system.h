@@ -3,13 +3,20 @@
 #include <unordered_set>
 #include <unordered_map>
 #include <variant>
+#include <ArduinoJson.h>
+#include <atomic>
+
 // содержит индефикатор типа и его id
 using TargetRefID = uint32_t;
 using timeMS = uint64_t;
 using ScheduledIntentID = uint16_t;
-
+template <typename T>
+inline uint8_t to_u8(T v)
+{
+    return static_cast<uint8_t>(v);
+}
 // текущий статус намериния, его состояние
-enum class IntentState
+enum class IntentState : uint8_t
 {
     // CREATED, // намерение создано , но еще не обрабатывалось
 
@@ -27,6 +34,8 @@ enum class IntentState
 
     TO_DELETE // готово для удаления
 };
+inline const char *toString(IntentState v);
+
 enum class ExecuteResult : uint8_t
 {
 
@@ -46,8 +55,28 @@ enum class ExecuteResult : uint8_t
 
     UNSUPPORTED_ACTION, // действие не поддерживается
 
+    FAIL_CAST,
+
+    ERROR_LIFE,
+
+    ERROR_TARGET
+
 };
-enum class IntentFailArbitrator
+inline const char *toString(ExecuteResult v);
+enum class IntentCommand : uint8_t
+{
+
+    NONE,
+
+    ACTIVE, // намерение активно и ожидает выполнения
+
+    PAUSED, // выполнение временно приостановлено
+
+    TO_DELETE // готово для удаления
+
+};
+inline const char *toString(IntentCommand v);
+enum class IntentFailArbitrator : uint8_t
 {
     NONE,
 
@@ -63,12 +92,16 @@ enum class IntentFailArbitrator
     // заменил intent равного приоритета
     OVERRIDE_EQUAL_PRIORITY,
 
+    // отложен арбитром
+    DEFERRED_BY_ARBITRATOR,
+
     // действие не поддерживается
     UNSUPPORTED_ACTION
 
 };
+inline const char *toString(IntentFailArbitrator v);
 // информация - что конкретно мы должны сделать
-enum class ActionType
+enum class ActionType : uint8_t
 {
     ON,     // включить пин/устройство
     OFF,    // выключить пин/устройство
@@ -79,48 +112,48 @@ enum class ActionType
     DISCONNECT,
 
     PUSH,
-    CLEAR,
-   
+    ERASE,
 
-    DISABLES, // временно запретить выполнение (блокировка логики)
-    ENABLES,  // снять запрет, восстановить выполнение правил
     DISABLE_TOGGLE,
     DISABLE_FADE,
     ENABLE_TOGGLE,
     ENABLE_FADE
 };
+inline const char *toString(ActionType v);
 // жизненный цикл события
-enum class LifetimeType
+enum class LifetimeType : uint8_t
 {
     ONCE_TRY, // ровно одна попытка исполнения, независимо от результата
     ONESHOT,  // событие выполняется один раз по времени
     REPEAT,   // событие выполняется каждый день/по расписанию
     UNENDING  // бесконечное
 };
+inline const char *toString(LifetimeType v);
 /*
 информация о том , кто должен исполнить событие.
 если событие применяется к  событию,
-то оно должно  исполнятся всегда,
-если цель создана не  IntentSource::SYSTEM
+то оно должно  исполнятся всегда
 */
-enum class TargetType
+enum class TargetType : uint8_t
 {
     PIN,    // физический исполнитель
     DEVICE, // источник событий (железо)
     INTENT  // намериние ScheduledIntent
 };
-
+inline const char *toString(TargetType v);
 // настройки плавного увеличения яркости
 struct FadePayload
 {
     uint8_t from{};        // стартовая яркость
     uint8_t to{};          // конечная яркость
     uint32_t durationMs{}; // время перехода
+    void fill_json(JsonArray &arr) const;
 };
 // создать коннект
 struct ConnectPayload
 {
     uint32_t obj{}; // ID
+    void fill_json(JsonArray &arr) const;
 };
 
 /*
@@ -135,7 +168,7 @@ struct TargetRef
     static uint16_t getId(const TargetRefID &value);
 };
 // кто создал намериние
-enum class IntentSource
+enum class IntentSource : uint8_t
 {
     IntentDEFAULT,
     SENSOR,   // создал датчик
@@ -143,16 +176,16 @@ enum class IntentSource
     USER,     // создал пользователь
     SYSTEM    // системное намерение
 };
-
+inline const char *toString(IntentSource v);
 // уровень важности события
-enum class IntentUrgency
+enum class IntentUrgency : uint8_t
 {
     NORMAL,
     INCREASED,
     CRITICAL,
     EMERGENCY
 };
-
+inline const char *toString(IntentUrgency v);
 /*
 содержит необходимые данные для выполнения действия
 DimPayload содержет целевую яркость
@@ -174,6 +207,7 @@ struct Intent
     ActionType type{}; // что сделать
 
     IntentPayload payload{}; // данные необходимые для выполнения
+    void fill_json(JsonObject &obj) const;
 };
 // время когда выполнять намериние
 struct Schedule
@@ -181,15 +215,23 @@ struct Schedule
     timeMS startTime{};
     timeMS endTime{};
     bool operator==(const Schedule &other) const;
+    void fill_json(JsonObject &obj) const;
 };
 // IntentFailArbitrator заполняется только если Arbitrator не пропустил
 // blockingIntentID — всегда источник внешнего конфликта
 // ExecuteResult — всегда итог действия устройства, даже если оно частичное
 struct ExecuteMeta
 {
+
     ExecuteResult rezult{};
-    ScheduledIntentID blockingIntentID{};
+    ScheduledIntentID blockingIntentIDResult{};
+
+    IntentCommand command;
+    ScheduledIntentID initiatorID{};
+
     IntentFailArbitrator reason{};
+    ScheduledIntentID blockingIntentIDArbitrator{};
+    void fill_json(JsonObject &obj) const;
 };
 
 struct ScheduledIntent
@@ -207,6 +249,9 @@ struct ScheduledIntent
     ScheduledIntentID id{};
     ExecuteMeta rezult{};
     void printF() const;
+    void fill_json(JsonArray &arr) const;
+    uint32_t versionStore{1};
+    
 };
 
 // отвечает за добавление и удаление намериний
@@ -223,7 +268,7 @@ public:
     // если priority одинаковый
     // более новый intent выигрывает
     ScheduledIntentID add(ScheduledIntent &intent); // добавить намерение
-    void update();
+    
     // Проверяет, является ли состояние финальным.
     // Финальное состояние означает, что intent больше не может изменяться
     // и не участвует в дальнейшей обработке жизненного цикла (кроме удаления).
@@ -233,12 +278,15 @@ public:
     std::unordered_set<ScheduledIntentID> get_running() const;
     // получает приоритет события, на основе кто создал и уровня важности события
     uint8_t resolvePriority(const IntentSource &source, const IntentUrgency &urgency) const;
-
+    uint32_t get_versionStore(ScheduledIntentID &id);
     bool setStateExecutor(ScheduledIntentID id, ExecuteResult res, ScheduledIntentID blockingIntentID = 0);
+
+    bool setIntentCommand(ScheduledIntentID id, IntentCommand res, ScheduledIntentID initiatorID);
     // может вернуть  std::nullopt;
     std::optional<ScheduledIntent> get(ScheduledIntentID id) const;
+    void fill_json(JsonArray &arr) const;
     size_t size() const;
-    void clear();
+    
     void printI();
 
 protected:
