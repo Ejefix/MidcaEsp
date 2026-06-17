@@ -231,6 +231,10 @@ struct ExecuteMeta
 
     IntentFailArbitrator reason{};
     ScheduledIntentID blockingIntentIDArbitrator{};
+
+   
+    bool operator==(const ExecuteMeta& other) const;
+    bool operator!=(const ExecuteMeta& other) const;
     void fill_json(JsonObject &obj) const;
 };
 
@@ -250,8 +254,7 @@ struct ScheduledIntent
     ExecuteMeta rezult{};
     void printF() const;
     void fill_json(JsonArray &arr) const;
-    uint32_t versionStore{1};
-    
+    uint32_t version{1};
 };
 
 // отвечает за добавление и удаление намериний
@@ -268,7 +271,7 @@ public:
     // если priority одинаковый
     // более новый intent выигрывает
     ScheduledIntentID add(ScheduledIntent &intent); // добавить намерение
-    
+    void update();
     // Проверяет, является ли состояние финальным.
     // Финальное состояние означает, что intent больше не может изменяться
     // и не участвует в дальнейшей обработке жизненного цикла (кроме удаления).
@@ -278,7 +281,11 @@ public:
     std::unordered_set<ScheduledIntentID> get_running() const;
     // получает приоритет события, на основе кто создал и уровня важности события
     uint8_t resolvePriority(const IntentSource &source, const IntentUrgency &urgency) const;
-    uint32_t get_versionStore(ScheduledIntentID &id);
+    uint32_t get_version(ScheduledIntentID id) const;
+    uint32_t get_version() const;
+    
+    std::vector<ScheduledIntentID> get_list_id() const;
+
     bool setStateExecutor(ScheduledIntentID id, ExecuteResult res, ScheduledIntentID blockingIntentID = 0);
 
     bool setIntentCommand(ScheduledIntentID id, IntentCommand res, ScheduledIntentID initiatorID);
@@ -286,7 +293,7 @@ public:
     std::optional<ScheduledIntent> get(ScheduledIntentID id) const;
     void fill_json(JsonArray &arr) const;
     size_t size() const;
-    
+
     void printI();
 
 protected:
@@ -314,4 +321,5 @@ private:
     std::unordered_set<ScheduledIntentID> running{};
 
     ScheduledIntentID nextId{1};
+    uint32_t version{1};
 };

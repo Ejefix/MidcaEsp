@@ -55,7 +55,30 @@ void setup()
     store->add(intent);
   }
 }
+void createPinsIntents()
+{
+  for (size_t i{}; i < pinsG.size(); ++i)
+  {
+    ScheduledIntent intent{};
+    intent.intent.targetID = TargetRef::make(TargetType::PIN, pinsG[i]->get_id());
+    intent.intent.type = ActionType::TOGGLE;
+    intent.source = IntentSource::USER;
+    intent.createdAt = myclock.getEpochMillis();
+    store->add(intent);
+  }
+}
 
+uint32_t lastPinsIntentUpdate = 0; // время последнего запуска
+void updatePinsIntentTask()
+{
+  uint32_t now = millis(); // текущее время
+
+  if (now - lastPinsIntentUpdate >= 60000) // 60 секунд
+  {
+    createPinsIntents();        // запускаем генерацию
+    lastPinsIntentUpdate = now; // обновляем таймер
+  }
+}
 String cmd{};
 void printRAM()
 {
@@ -134,7 +157,6 @@ void loop()
       {
         for (size_t i{}; i < pinsG.size(); ++i)
         {
-
           ScheduledIntent intent{};
           intent.intent.targetID = TargetRef::make(TargetType::PIN, pinsG[i]->get_id());
           intent.intent.type = ActionType::OFF;
@@ -145,7 +167,7 @@ void loop()
       }
       if (cmd == "5")
       {
-        for (size_t i{}; i < pinsG.size()/2; ++i)
+        for (size_t i{}; i < pinsG.size() / 2; ++i)
         {
 
           ScheduledIntent intent{};
@@ -176,7 +198,7 @@ void loop()
       }
       if (cmd == "8")
       {
-        for (size_t i{}; i < pinsG.size()/2; ++i)
+        for (size_t i{}; i < pinsG.size() / 2; ++i)
         {
 
           ScheduledIntent intent{};
@@ -211,13 +233,7 @@ void loop()
       pinsG[i]->begin();
     }
   }
-  
-  if (PIN::changed_flags)
-  {
-     PIN::changed_flags = false;
-     SENSOR::changed_flags = false;
-     DeviceRegistry::changed_flags = false;
-     updateDATA = true;
-  }
+  store->update();
+  updatePinsIntentTask();
   vTaskDelay(2);
 }

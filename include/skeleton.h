@@ -67,39 +67,19 @@ public:
     script_off,
     brightness,
 
-    pir,
-    push,
-    remove,
-    sm,
+    pir,push,remove,sm,
 
     status,
+    snapshot_device,
+    snapshot_store,
+    snapshot_intent,
+    snapshot_pins,
+    snapshot_connect,
     status_full,
 
     end
   };
-  const std::array<String, Skeleton::end> commands{
-      "%p01", "%p02", "%p03", "%p04", "%p05",
-      "%p06", "%p07", "%p08", "%p09", "%p10",
-      "%p11", "%p12", "%p13", "%p14", "%p15",
-      "%p16", "%p17", "%p18", "%p19", "%p20",
-      "%p21", "%p22", "%p23", "%p24", "%p25",
-      "%p26", "%p27", "%p28", "%p29", "%p30",
-      "%p31", "%p32", "%p33", "%p34", "%p35",
-
-      "%I00", "%I11", "%I88",
-      "%G00",
-      "%S00",
-      "%S01",
-      "%F00",
-
-      "%O01",
-      "%O02",
-      "%t01", "%t02", "%U01", "%U02",
-
-      "%U03", "%U04", "%B04",
-
-      "%P00", "%A00", "%A01", "%SM0",
-      "%S10", "%S11"};
+  static const std::array<String, Skeleton::end> commands;
   String id{};
 };
 

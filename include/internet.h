@@ -7,6 +7,7 @@
 #include <config.h>
 #include <clock.h>
 #include <WebServer.h>
+#include "SyncBuilder.h"
 
 class Internet : public Encryption, public Config, public Skeleton
 {
@@ -38,8 +39,8 @@ private:
   WiFiServer *tcpServer{nullptr};
   WiFiClient client_server;
   WiFiUDP Udp;
-
-  std::vector<WiFiClient*> clients;
+  ClientTCP test;
+  std::vector<WiFiClient *> clients;
   std::vector<String> id_cmd;
   unsigned long go_fullstatus{};
   const unsigned long interval = 1 * 60 * 1000;
@@ -49,8 +50,8 @@ private:
   String fullStatus{};
   int cmd_id_count{1000};
   bool connect_server{false};
-  bool serverOK {false};
+  bool serverOK{false};
   const String local_name = "MIDCAMAINU";
-}; 
+};
 
-#endif 
+#endif

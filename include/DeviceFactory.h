@@ -8,7 +8,7 @@ using DeviceId = uint32_t;
 
 class DeviceFactory
 {
-public: 
+public:
     static IInputDevice *create(uint8_t mcp_id, DeviceType type, uint8_t pin_, uint16_t id);
 };
 
@@ -19,14 +19,18 @@ public:
     // возвращает ID девайса , если 0 = error
     bool add(uint8_t mcp_id, DeviceType type, uint8_t pin);
     bool exists(uint16_t id) const;
-    std::vector<std::pair<uint16_t, DeviceType>> get_ids() const;
+    std::vector<uint16_t> get_ids() const;
+
     bool set_type(DeviceType type, uint16_t id);
+    uint32_t get_version() const;
+    uint32_t get_version(uint16_t id) const;
     IInputDevice *get(uint16_t id);
-    
+
     void fill_json(JsonArray &arr) const;
+    void fill_json(uint16_t id,JsonArray &arr) const;
     void save() const;
     void load();
-    static bool changed_flags;
+
 private:
     uint16_t make_id(uint8_t mcp, uint8_t pin);
     std::pair<uint8_t, uint8_t> parse_id(uint16_t id);
@@ -41,9 +45,10 @@ private:
     };
     std::vector<DeviceEntry> devices;
     const String path{"/devices.json"};
+    uint32_t version{1};
 };
 
-using PinId = uint16_t; 
+using PinId = uint16_t;
 using ScheduledIntentID = uint16_t;
 class DeviceBinder
 {
@@ -57,12 +62,13 @@ public:
     void disconnect(DeviceId device);
     void disconnect(PinId obj);
     void disconnect();
-
+    void fill_json(JsonArray &arr) const;
     // тут создаются намериния в зависимости от результата опроса девайса
-    void begin() ;
-
+    void begin();
+    uint32_t get_version() const;
+    void save() const;
+    void load();
 private:
-    
-    std::unordered_map<DeviceId, std::vector<std::pair<PinId,ScheduledIntentID>>> data;
-    
+    std::unordered_map<DeviceId, std::vector<PinId>> data;
+    uint32_t version{1};
 };

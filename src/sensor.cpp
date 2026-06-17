@@ -3,10 +3,8 @@
 #include "clock.h"
 #include "globals.h"
 
-const uint64_t one_day = 24ULL * 60ULL * 60ULL * 1000ULL;
-bool SENSOR::changed_flags{false};
 SENSOR::SENSOR(IGpioPin *gpio_, uint16_t id_)
-    : IInputDevice (id_) , gpio(gpio_)
+    : IInputDevice(id_), gpio(gpio_)
 {
 
   path += String(id);
@@ -44,9 +42,8 @@ DeviceType SENSOR::type()
 }
 unsigned long SENSOR::get_interval() const
 {
-    return time_off;
+  return time_off;
 }
-
 
 void SENSOR::fill_json(JsonArray &arr) const
 {
@@ -105,7 +102,7 @@ void SENSOR::load()
         serializeJson(obj["off"], Serial);
         serializeJson(obj["time"], Serial);
         serializeJson(obj["status"], Serial);
-       
+
         time_off = obj["off"] | 10000; // если ключа нет -> 10000
         time_activ = obj["time"] | 0;
         status = obj["status"] | true;
@@ -123,11 +120,14 @@ DeviceResult SENSOR::executeAction(const ScheduledIntent &intent)
   {
   case ActionType::ON:
     status = true;
+    ++version;
     return DeviceResult::SUCCESS;
   case ActionType::OFF:
     status = false;
+    ++version;
     return DeviceResult::SUCCESS;
   case ActionType::TOGGLE:
+    ++version;
     status = !status;
     return DeviceResult::SUCCESS;
   case ActionType::FADE:
@@ -135,6 +135,7 @@ DeviceResult SENSOR::executeAction(const ScheduledIntent &intent)
     auto fade = std::get_if<FadePayload>(&intent.intent.payload);
     if (!fade)
       return DeviceResult::INVALID_PAYLOAD;
+    ++version;
     time_off = fade->durationMs;
     return DeviceResult::SUCCESS;
   }
@@ -176,16 +177,13 @@ bool SENSOR::get_activ()
 
   bool active = gpio->read();
 
-  unsigned long time_now = millis();
-  auto time = myclock.getEpochMillis();
   if (active)
   {
-    
-    time_activ = time;
-    if (!status && time_now - changed_flags_time > 30000)
+    // обновление раз в 2 секунд
+    if (myclock.getEpochMillis() - time_activ > 2000)
     {
-      changed_flags_time = time_now;
-      SENSOR::changed_flags = true;
+      time_activ = myclock.getEpochMillis();
+      ++version;
     }
   }
   if (!status) // принудительно выключена реакция

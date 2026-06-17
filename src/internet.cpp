@@ -12,8 +12,9 @@
 
 const unsigned long long Internet::epochDiff{1000 * 60 * 4};
 Internet::Internet(CLOCK *myclock)
-    : myclock(myclock), tcpServer(new WiFiServer{TCP_PORT})
+    : myclock(myclock), tcpServer(new WiFiServer{TCP_PORT}),test{client_server}
 {
+
 }
 // это нужно для первого подлючения к серверу и авторизации
 bool Internet::connect()
@@ -194,6 +195,7 @@ void Internet::processServerResponse()
       }
     }
     ping_pong();
+    test.begin();
   }
 }
 char *Internet::read_buffer(size_t &buffer_size)
@@ -525,6 +527,7 @@ String Internet::read_buffer(WiFiClient &client_)
   Serial.println("[ERR] ❌ Пакет не прочитан (таймаут)");
   return {};
 }
+
 void Internet::communication_udp()
 {
   int packetSize = Udp.parsePacket(); // проверяем, пришёл ли пакет

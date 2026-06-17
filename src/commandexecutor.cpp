@@ -187,9 +187,9 @@ String CommandExecutor::full_status_json() const
   String out;
   serializeJson(mainDoc, out); // строка для передачи
   size_t size = strlen(out.c_str());
-  Serial.print("[INF] Размер данных JSON: ");
-  Serial.print(size);
-  Serial.println(" байт");
+ // Serial.print("[INF] Размер данных JSON: ");
+ // Serial.print(size);
+ // Serial.println(" байт");
   return Skeleton::commands[Skeleton::status_full] + out; // возвращаем строку
   // return  out; // возвращаем строку
 }
