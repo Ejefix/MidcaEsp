@@ -4,12 +4,20 @@
 #include "setupesp.h"
 #include "globals.h"
 
-bool PIN::changed_flags{false};
+
 uint16_t PIN::id_pin{3001};
 
 PIN::PIN(IPinDriver *pin_driver_) : pin_driver(pin_driver_), id{id_pin}
 {
   ++id_pin;
+  if (timeFADE == 0)
+  {
+    brightness = brightness_to;
+  }
+  else
+  {
+    step = (brightness_to - brightness_from) / static_cast<double>(timeFADE);
+  }
 }
 void PIN::load()
 {
@@ -29,6 +37,11 @@ void PIN::save() const
   }
   Serial.print("[PIN] PIN сохранён:"); // лог
   Serial.println(path);
+}
+
+uint32_t PIN::get_version() const
+{
+  return version;
 }
 
 DeviceResult PIN::executeAction(const ScheduledIntent &intent)
@@ -55,6 +68,18 @@ DeviceResult PIN::executeAction(const ScheduledIntent &intent)
     timeFADE = fade->durationMs;
     brightness_to = fade->to;
     brightness_from = fade->from;
+    if(brightness_from > brightness_to)
+    {
+      std::swap(brightness_from, brightness_to);
+    }
+    if (timeFADE == 0)
+    {
+      brightness = brightness_to;
+    }
+    else
+    {
+      step = (brightness_to - brightness_from) / static_cast<double>(timeFADE);
+    }
     return DeviceResult::SUCCESS;
   }
   case ActionType::CONNECT:
@@ -84,9 +109,6 @@ DeviceResult PIN::executeAction(const ScheduledIntent &intent)
   {
     PinId pinID = this->id;
     device_binder->disconnect(pinID);
-    brightness_to = 0;
-    brightness_from = 100;
-    brightness = 100;
     return DeviceResult::SUCCESS;
   }
   default:
@@ -105,7 +127,36 @@ void PIN::begin()
 
   if (!pin_driver)
     return;
-  pin_driver->write(activPIN, brightness);
+  if (!activPIN)
+  {
+    brightness = brightness_from;
+  }
+  else
+  {
+    if (timeFADE == 0)
+    {
+      brightness = brightness_to;
+    }
+    else
+    {
+      auto now = millis();
+      auto elapsed = now - timeStep;
+      timeStep = now;
+
+      brightness += step * elapsed;
+
+      if ((step > 0 && brightness > brightness_to) || (step < 0 && brightness < brightness_to))
+      {
+        brightness = brightness_to;
+      }
+    }
+  }
+
+  // если драйвер принял изменения, увеличиваем версию для синхронизации
+  if (pin_driver->write(activPIN, static_cast<uint8_t>(brightness)))
+  {
+    ++version;
+  }
 }
 
 void PIN::fill_json(JsonArray &arr) const

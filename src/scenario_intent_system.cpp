@@ -24,7 +24,8 @@ ScheduledIntentID ScheduledIntentStore::add(ScheduledIntent &intent)
     {
         intent.createdAt = myclock.getEpochMillis();
     }
-    ++intent.versionStore;
+    ++intent.version;
+    ++version;
     store[intent.id] = intent;
     auto &vec = scheduler[intent.intent.targetID];
     if (vec.capacity() - vec.size() < 10)
@@ -59,6 +60,38 @@ ScheduledIntentID ScheduledIntentStore::add(ScheduledIntent &intent)
     return intent.id;
 }
 
+void ScheduledIntentStore::update()
+{
+    bool changed = false;
+    for (auto it = store.begin(); it != store.end();)
+    {
+        auto &intent = it->second;
+        auto now = myclock.getEpochMillis();
+        if (intent.state != IntentState::TO_DELETE && isFinalState(intent.state) && now - intent.updatedAt > 20000)
+        {
+            intent.state = IntentState::TO_DELETE;
+            intent.updatedAt = now;
+            intent.version++;
+            changed = true;
+            
+        }
+        if (intent.state == IntentState::TO_DELETE && now - intent.updatedAt > 10000)
+        {
+            // Serial.print("[ScheduledIntentStore::update] Намериние ScheduledIntentID ");
+            //  Serial.print(intent.id);
+            //  Serial.println(" удалено");
+            it = store.erase(it);
+            changed = true;
+            continue;
+        }
+        ++it;
+    }
+    if (changed)
+    {
+        ++version;
+    }
+}
+
 bool ScheduledIntentStore::setState(ScheduledIntentID id, IntentState state, ExecuteMeta rezult)
 {
     auto it = store.find(id);
@@ -67,15 +100,22 @@ bool ScheduledIntentStore::setState(ScheduledIntentID id, IntentState state, Exe
     {
         if (isFinalState(it->second.state))
         {
+            /*
             Serial.print("[ScheduledIntentStore::setState] Намериние ScheduledIntentID ");
             Serial.print(id);
             Serial.println(" не верный статус для обновления");
+            */
             return false;
+        }
+        if (it->second.state == state && it->second.rezult == rezult)
+        {
+            return true;
         }
         it->second.updatedAt = myclock.getEpochMillis();
         it->second.state = state;
         it->second.rezult = rezult;
-        it->second.versionStore++;
+        it->second.version++;
+        ++version;
         switch (state)
         {
         case IntentState::RUNNING:
@@ -136,6 +176,8 @@ bool ScheduledIntentStore::extend(const ScheduledIntentID &id, timeMS time)
         Serial.println(" успешно обновил время дейсвия");
         it->second.updatedAt = myclock.getEpochMillis();
         it->second.schedule.endTime = time;
+        it->second.version++;
+        ++version;
         return true;
     }
     return false;
@@ -158,7 +200,8 @@ bool ScheduledIntentStore::moveToNextDay(const ScheduledIntentID &id)
         Serial.print(id);
         Serial.println(" успешно обновил время дейсвия");
         it->second.updatedAt = myclock.getEpochMillis();
-        it->second.versionStore++;
+        it->second.version++;
+        ++version;
         while (it->second.schedule.endTime < it->second.updatedAt)
         {
             it->second.schedule.startTime += one_day;
@@ -242,15 +285,31 @@ uint8_t ScheduledIntentStore::resolvePriority(const IntentSource &source, const 
     return score;
 }
 
-uint32_t ScheduledIntentStore::get_versionStore(ScheduledIntentID &id)
+uint32_t ScheduledIntentStore::get_version(ScheduledIntentID id) const
 {
     auto it = store.find(id);
 
     if (it != store.end())
     {
-        return it->second.versionStore;
+        return it->second.version;
     }
     return {};
+}
+
+uint32_t ScheduledIntentStore::get_version() const
+{
+    return version;
+}
+
+std::vector<ScheduledIntentID> ScheduledIntentStore::get_list_id() const
+{
+    std::vector<ScheduledIntentID> vec{};
+    vec.reserve(store.size());
+    for (auto it = store.begin(); it != store.end(); ++it)
+    {
+        vec.emplace_back(it->first);
+    }
+    return vec;
 }
 
 bool ScheduledIntentStore::setStateExecutor(ScheduledIntentID id, ExecuteResult res, ScheduledIntentID blockingIntentID)
@@ -261,16 +320,21 @@ bool ScheduledIntentStore::setStateExecutor(ScheduledIntentID id, ExecuteResult 
     {
         if (isFinalState(it->second.state))
         {
-            Serial.print("[ScheduledIntentStore::setStateExecutor] Намериние ScheduledIntentID ");
-            Serial.print(id);
-            Serial.println(" не верный статус для обновления");
+            // Serial.print("[ScheduledIntentStore::setStateExecutor] Намериние ScheduledIntentID ");
+            //  Serial.print(id);
+            //  Serial.println(" не верный статус для обновления");
             return false;
         }
         it->second.updatedAt = myclock.getEpochMillis();
+        if (it->second.rezult.rezult == res && it->second.rezult.blockingIntentIDResult == blockingIntentID)
+        {
+            return true;
+        }
         it->second.rezult.rezult = res;
         it->second.rezult.blockingIntentIDResult = blockingIntentID;
         it->second.executedAt = myclock.getEpochMillis();
-        it->second.versionStore++;
+        it->second.version++;
+        ++version;
         return true;
     }
     return false;
@@ -289,10 +353,15 @@ bool ScheduledIntentStore::setIntentCommand(ScheduledIntentID id, IntentCommand 
             Serial.println(" не верный статус для обновления");
             return false;
         }
+        if (it->second.rezult.command == res && it->second.rezult.initiatorID == initiatorID)
+        {
+            return true;
+        }
         it->second.updatedAt = myclock.getEpochMillis();
         it->second.rezult.command = res;
         it->second.rezult.initiatorID = initiatorID;
-        it->second.versionStore++;
+        it->second.version++;
+        ++version;
         return true;
     }
     return false;
@@ -384,51 +453,69 @@ void ScheduledIntent::fill_json(JsonArray &arr) const
 
     obj["id"] = id; // ID намерения
     if (to_u8(life) != 0)
-        obj["li"] = to_u8(life); // тип жизни
+        obj["life"] = to_u8(life); // тип жизни
     if (to_u8(source) != 0)
-        obj["so"] = to_u8(source); // источник
+        obj["source"] = to_u8(source); // источник
     if (to_u8(state) != 0)
-        obj["st"] = to_u8(state); // состояние
+        obj["state"] = to_u8(state); // состояние
     if (to_u8(urgency) != 0)
-        obj["ur"] = to_u8(urgency); // важность
+        obj["urgency"] = to_u8(urgency); // важность
     if (createdAt != 0)
-        obj["cr"] = createdAt; // время создания
+        obj["createdAt"] = createdAt; // время создания
     if (executedAt != 0)
-        obj["ex"] = executedAt; // время выполнения
+        obj["executedAt"] = executedAt; // время выполнения
     if (updatedAt != 0)
-        obj["up"] = updatedAt; // последнее изменение
-    schedule.fill_json(obj);
-    intent.fill_json(obj);
-    rezult.fill_json(obj);
+        obj["updatedAt"] = updatedAt; // последнее изменение
+    auto scheduleJson = obj["Schedule"].to<JsonObject>();
+    schedule.fill_json(scheduleJson);
+    auto intentJson = obj["Intent"].to<JsonObject>();
+    intent.fill_json(intentJson);
+    auto rezultJson = obj["ExecuteMeta"].to<JsonObject>();
+    rezult.fill_json(rezultJson);
+}
+
+bool ExecuteMeta::operator==(const ExecuteMeta &other) const
+{
+    return rezult == other.rezult &&
+           blockingIntentIDResult == other.blockingIntentIDResult &&
+           command == other.command &&
+           initiatorID == other.initiatorID &&
+           reason == other.reason &&
+           blockingIntentIDArbitrator == other.blockingIntentIDArbitrator;
+}
+
+bool ExecuteMeta::operator!=(const ExecuteMeta &other) const
+{
+    return !(*this == other);
 }
 
 void ExecuteMeta::fill_json(JsonObject &obj) const
 {
     if (to_u8(rezult) != 0)
-        obj["Res"] = to_u8(rezult);
+        obj["ExecuteResult"] = to_u8(rezult);
     if (blockingIntentIDResult != 0)
-        obj["IDR"] = blockingIntentIDResult;
+        obj["blockingIntentIDResult"] = blockingIntentIDResult;
     if (to_u8(command) != 0)
     {
-        obj["com"] = to_u8(command);
-        obj["ini"] = initiatorID;
+        obj["IntentCommand"] = to_u8(command);
+        obj["initiatorID"] = initiatorID;
     }
     if (to_u8(reason) != 0)
-        obj["Arb"] = to_u8(reason);
+        obj["IntentFailArbitrator"] = to_u8(reason);
     if (blockingIntentIDArbitrator != 0)
-        obj["IDA"] = blockingIntentIDArbitrator;
+        obj["blockingIntentIDArbitrator"] = blockingIntentIDArbitrator;
 }
 
 void Intent::fill_json(JsonObject &obj) const
 {
 
-    obj["Target"] = targetID;
+    obj["TargetID"] = targetID;
     if (to_u8(type) != 0)
         obj["Action"] = to_u8(type);
     auto fade = std::get_if<ConnectPayload>(&payload);
     if (fade)
     {
-        JsonArray arrJ = obj["Conn"].to<JsonArray>();
+        JsonArray arrJ = obj["Connect"].to<JsonArray>();
         fade->fill_json(arrJ);
         return;
     }

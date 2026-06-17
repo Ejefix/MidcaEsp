@@ -37,7 +37,9 @@ public:
     virtual ~IInputDevice() = default;
     virtual InputEvent event() = 0;
     virtual DeviceType type() = 0;
+    uint32_t get_version()const ;
     uint16_t get_id() const;
 protected:
     const uint16_t id;
+    uint32_t version{1};
 };

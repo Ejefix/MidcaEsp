@@ -15,7 +15,6 @@ bool RelayDriver::write(bool on, uint8_t)
     if (state == on)
         return false;
     state = on;
-    PIN::changed_flags = true;
     if (on)
     {
         digitalWrite(pin, LOW);

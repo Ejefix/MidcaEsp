@@ -16,7 +16,7 @@ public:
   unsigned long get_interval() const;
   void fill_json(JsonArray &arr) const;
   void load();
-  static bool changed_flags;
+  
 
 protected:
   const String arr_name{"sensor"};
@@ -31,6 +31,4 @@ private:
   uint32_t time_off{3000};
   IGpioPin *gpio;
   String path{"/device"};
-  unsigned long changed_flags_time{};
-  
 };

@@ -23,6 +23,8 @@ public:
 
   void load();
   void save() const;
+  uint32_t get_version() const;
+
   //------------------------------
 
   //------------------------------
@@ -30,7 +32,7 @@ public:
 
   PinId get_id() const;
 
-  static bool changed_flags;
+ 
   void fill_json(JsonArray &arr) const;
 
 protected:
@@ -39,7 +41,6 @@ protected:
 private:
   static uint16_t id_pin;
   const PinId id;
-  friend CommandExecutor;
 
   bool activPIN{false};
 
@@ -49,10 +50,13 @@ private:
   // ^=       <- перевернуть бит
   // unsigned char pin_info{FLAG_USER_OFF};
   IPinDriver *pin_driver{nullptr};
-  uint8_t brightness_to{0};
-  uint8_t brightness_from{100};
-  uint8_t brightness{100};
-  uint32_t timeFADE{};
+  uint8_t brightness_to{100}; // конечная яркость для FADE
+  uint8_t brightness_from{0}; // начальная яркость для FADE
+  double brightness{0};       // текущая яркость для FADE
+  double step{0};             // шаг изменения яркости для FADE
+  uint32_t timeFADE{};        // время установки яркости от brightness_from до brightness_to
+  uint32_t timeStep{};        // время последнего обновления яркости для FADE
+  uint32_t version{1};
 };
 
 #endif // PIN_H
