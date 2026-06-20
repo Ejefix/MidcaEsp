@@ -1,4 +1,5 @@
 #include "SyncBuilder.h"
+#include <algorithm>
 #include "globals.h"
 uint32_t ClientStreamSession::cmd_id_count{1};
 
@@ -7,7 +8,7 @@ void SyncBuilder::buildPINsSnapshot(String &out) const
     out.clear();
 
     JsonDocument mainDoc{};
-    mainDoc["ID"] = this->id;
+    mainDoc["ID"] = Skeleton::id;
     mainDoc["time"] = millis();
     JsonObject data = mainDoc["data"].to<JsonObject>();
 
@@ -28,7 +29,7 @@ void SyncBuilder::buildDeviceSnapshot(String &out) const
 {
     out.clear();
     JsonDocument mainDoc{};
-    mainDoc["ID"] = this->id;
+    mainDoc["ID"] = Skeleton::id;
     mainDoc["time"] = millis();
     JsonObject data = mainDoc["data"].to<JsonObject>();
 
@@ -47,7 +48,7 @@ void SyncBuilder::buildIntentSnapshot(String &out) const
 {
     out.clear();
     JsonDocument mainDoc{};
-    mainDoc["ID"] = this->id;
+    mainDoc["ID"] = Skeleton::id;
     mainDoc["time"] = millis();
     JsonObject data = mainDoc["data"].to<JsonObject>();
     JsonArray storeJson = data["STORE"].to<JsonArray>();
@@ -65,7 +66,7 @@ void SyncBuilder::buildConnectSnapshot(String &out) const
 {
     out.clear();
     JsonDocument mainDoc{};
-    mainDoc["ID"] = this->id;
+    mainDoc["ID"] = Skeleton::id;
     mainDoc["time"] = millis();
     JsonObject data = mainDoc["data"].to<JsonObject>();
     JsonArray connectJson = data["CONNECT"].to<JsonArray>();
@@ -87,7 +88,7 @@ void SyncBuilder::buildPINsSnapshot(PinId id, String &out) const
         if (pinsG[i]->get_id() == id)
         {
             JsonDocument mainDoc{};
-            mainDoc["ID"] = this->id;
+            mainDoc["ID"] = Skeleton::id;
             mainDoc["time"] = millis();
             JsonObject data = mainDoc["data"].to<JsonObject>();
             JsonArray pinsJson = data["PINS"].to<JsonArray>();
@@ -110,7 +111,7 @@ void SyncBuilder::buildIntentSnapshot(ScheduledIntentID id, String &out) const
     if (!intent)
         return;
     JsonDocument mainDoc{};
-    mainDoc["ID"] = this->id;
+    mainDoc["ID"] = Skeleton::id;
     mainDoc["time"] = millis();
     JsonObject data = mainDoc["data"].to<JsonObject>();
     JsonArray intentJson = data["INTENT"].to<JsonArray>();
@@ -130,7 +131,7 @@ void SyncBuilder::buildDeviceSnapshot(uint16_t id, String &out) const
     if (!device)
         return;
     JsonDocument mainDoc{};
-    mainDoc["ID"] = this->id;
+    mainDoc["ID"] = Skeleton::id;
     mainDoc["time"] = millis();
     JsonObject data = mainDoc["data"].to<JsonObject>();
     JsonArray deviceJson = data["DEVICE"].to<JsonArray>();
@@ -143,18 +144,59 @@ void SyncBuilder::buildDeviceSnapshot(uint16_t id, String &out) const
     out = Skeleton::commands[Skeleton::snapshot_device] + out;
 }
 
-ClientTCP::ClientTCP(WiFiClient &client_) : client{client_}, session{client_}, receiver{client_}
+ClientTCP::ClientTCP(WiFiClient &&client, CLOCK &myclock, bool isAuth)
+    : isAuth{isAuth},  client{std::move(client)}, auth{this->client, myclock}, session{this->client}, receiver{this->client}
 {
+
 }
 
-void ClientTCP::begin()
+ClientTCP::~ClientTCP()
 {
-    if (!client)
+     client.stop();
+}
+
+bool ClientTCP::begin()
+{
+
+    if (isAuth)
     {
-        // Serial.println("[ERR] Не можем начать сессию, клиент не подключен");
-        return;
+        if (auth.authorize())
+        {
+            session.begin();
+            receiver.begin();
+            return true;
+        }
     }
-    session.begin();
+    else
+    {
+        if (!client.connected())
+            return false;
+        session.begin();
+        receiver.begin();
+        return true;
+    }
+
+    return false;
+}
+
+bool ClientTCP::isConnected()
+{
+    return client.connected();
+}
+
+void ClientTCP::set_isAuth(bool isAuth)
+{
+    this->isAuth = isAuth;
+}
+
+void ClientTCP::set_adr(String adr)
+{
+    auth.set_adr(adr);
+}
+
+void ClientTCP::set_port(uint16_t port)
+{
+     auth.set_port(port);
 }
 
 ClientStreamSession::ClientStreamSession(WiFiClient &client_) : client(client_)
@@ -168,6 +210,13 @@ void ClientStreamSession::begin()
     sendUpdateDevice();
     sendUpdateStore();
     sendUpdateConnect();
+    if (!buffer.empty() && millis() - time_send > 30)
+    {
+        to_send(client, buffer.front());
+        buffer.pop_front();
+        time_send = millis();
+    }
+    
 }
 
 void ClientStreamSession::reset()
@@ -182,9 +231,25 @@ void ClientStreamSession::reset()
 }
 uint32_t counter = 0;
 size_t last_mb = -1;
-void ClientStreamSession::to_send(WiFiClient &client_, const String &body, const String &id_)
+void ClientStreamSession::to_send(WiFiClient &client_, const String &body)
 {
 
+    counter += body.length();
+    if ((counter >> 20) != last_mb)
+    {
+        last_mb = (counter >> 20);
+
+        double mb = counter / 1024.0 / 1024.0;
+        Serial.print("[LOG] Отправлено всего -> ");
+        Serial.print(mb, 3);
+        Serial.println(" MB");
+    }
+
+    client_.write((const uint8_t *)body.c_str(), body.length()); // отправка байт
+    client_.flush();
+}
+String ClientStreamSession::fullBody(const String &body, const String &id_)
+{
     String id{};
     if (id_ == "" || id_.length() != 4)
     {
@@ -209,26 +274,12 @@ void ClientStreamSession::to_send(WiFiClient &client_, const String &body, const
     {
         Serial.print("[ERR] Не верный размер пакета для отправки -> ");
         Serial.println(s);
-        return;
+        return {};
     }
     String first = String(size); // 1 байт для того что бы понимали сколько символов размер данных
 
     // стартовая                          [count size]  [size data]  [id 4 байта]  [data]
-    String full_body = Skeleton::commands[Skeleton::start] + first + second + id + body;
-    counter += full_body.length();
-
-    if ((counter >> 20) != last_mb)
-    {
-        last_mb = (counter >> 20);
-
-        double mb = counter / 1024.0 / 1024.0;
-        Serial.print("[LOG] Отправлено всего -> ");
-        Serial.print(mb, 3);
-        Serial.println(" MB");
-    }
-
-    client_.write((const uint8_t *)full_body.c_str(), full_body.length()); // отправка байт
-    client_.flush();
+    return Skeleton::commands[Skeleton::start] + first + second + id + body;
 }
 /*
 void ClientStreamSession::sendFullStatus()
@@ -271,7 +322,7 @@ void ClientStreamSession::sendUpdatePins()
             String out;
             out.reserve(200); // резервируем память для строки
             builder.buildPINsSnapshot(id, out);
-            to_send(client, enc.encrypt(out));
+            buffer.push_back(fullBody(enc.encrypt(out)));
         }
     }
 }
@@ -292,7 +343,7 @@ void ClientStreamSession::sendUpdateDevice()
                 out.reserve(200); // резервируем память для строки
                 versionDevice[list_idDevice[i]] = version;
                 builder.buildDeviceSnapshot(list_idDevice[i], out);
-                to_send(client, enc.encrypt(out));
+                buffer.push_back(fullBody(enc.encrypt(out)));
             }
         }
     }
@@ -304,8 +355,8 @@ void ClientStreamSession::sendUpdateStore()
     {
 
         auto list_id = store->get_list_id();
-       // Serial.print("[ClientStreamSession] Версия магазина ");
-      //  Serial.println(versionStore);
+        // Serial.print("[ClientStreamSession] Версия магазина ");
+        //  Serial.println(versionStore);
         for (auto it = versionIntent.begin(); it != versionIntent.end();)
         {
             auto exists = std::any_of(list_id.begin(), list_id.end(),
@@ -331,7 +382,7 @@ void ClientStreamSession::sendUpdateStore()
                 String out;
                 out.reserve(200); // резервируем память для строки
                 builder.buildIntentSnapshot(id, out);
-                to_send(client, enc.encrypt(out));
+                buffer.push_back(fullBody(enc.encrypt(out)));
                 versionIntent[id] = version;
                 //  Serial.print("[ClientStreamSession] Интент id  ");
                 //  Serial.print(id);
@@ -352,16 +403,79 @@ void ClientStreamSession::sendUpdateConnect()
         String out;
         out.reserve(200); // резервируем память для строки
         builder.buildConnectSnapshot(out);
-        to_send(client, enc.encrypt(out));
+        buffer.push_back(fullBody(enc.encrypt(out)));
     }
 }
 
+std::deque<String> ClientStreamReceiver::history{};
+bool ClientStreamReceiver::isCommandProcessed(const String &id)
+{
+    return std::find(history.begin(), history.end(), id) != history.end();
+}
+void ClientStreamReceiver::parseIntent(const String &jsonStr)
+{
+    JsonDocument doc;
+    auto error = deserializeJson(doc, jsonStr);
+    if (error)
+    {
+        Serial.print("[ClientStreamReceiver::parseIntent] Ошибка парсинга JSON: ");
+        Serial.println(error.c_str());
+        return;
+    }
+
+    if (doc["ID"].isNull())
+    {
+        Serial.println("[ClientStreamReceiver::parseIntent] Ошибка: JSON не содержит ключ 'ID'");
+        return;
+    }
+    String id = doc["ID"].as<String>();
+    if (id != Skeleton::id)
+    {
+        Serial.println("[ClientStreamReceiver::parseIntent] Ошибка: ID в JSON не совпадает с ID устройства, адресс не верный");
+        return;
+    }
+    if (doc["data"].isNull() || !doc["data"].is<JsonObject>())
+    {
+        Serial.println("[ClientStreamReceiver::parseIntent] Ошибка: JSON не содержит ключ 'data' или он не является объектом");
+        return;
+    }
+    JsonObject data = doc["data"].as<JsonObject>();
+    if (data["INTENT"].isNull() || !data["INTENT"].is<JsonArray>())
+    {
+        Serial.println("[ClientStreamReceiver::parseIntent] Ошибка: JSON не содержит ключ 'INTENT' или он не является массивом");
+        return;
+    }
+    JsonArray intentJson = data["INTENT"].as<JsonArray>();
+    for (size_t i{}; i < intentJson.size(); ++i)
+    {
+        JsonObject intentObj = intentJson[i].as<JsonObject>();
+        ScheduledIntent intent;
+        if (!intent.fill_from_json(intentObj))
+        {
+            Serial.println("[ClientStreamReceiver::parseIntent] Ошибка: Неверный формат данных интента в JSON");
+            continue;
+        }
+        else
+        {
+            Serial.println("[ClientStreamReceiver::parseIntent] Интент успешно распарсен из JSON, добавляем в магазин");
+            store->add(intent);
+        }
+    }
+}
 ClientStreamReceiver::ClientStreamReceiver(WiFiClient &client_) : client(client_)
 {
 }
 
 void ClientStreamReceiver::begin()
 {
+    if (client.available())
+    {
+        Serial.println();
+        Serial.println("[LOG] ------------- Сервер выслал данные. -----------");
+        communication_socet();
+        Serial.println("[LOG] ------------- Закончили с сервером  ----------- ");
+        Serial.println();
+    }
 }
 
 int ClientStreamReceiver::communication_socet()
@@ -378,15 +492,62 @@ int ClientStreamReceiver::communication_socet()
     Serial.println(cmdId);
 
     packet.remove(0, 4);
-    String decrypted = enc.decrypt(packet); // <-- передать сюда
-    if (decrypted.isEmpty())
+    packet = enc.decrypt(packet); // <-- передать сюда
+    if (packet.isEmpty())
     {
         Serial.println("[LOG] Не удалось расшифровать");
         return -27;
     }
 
-    Serial.println("[LOG] получена команда -> " + decrypted);
+    Serial.println("[LOG] получена команда -> " + packet);
+    if (packet.length() < 4)
+        return -2;
+    String command = packet.substring(0, 4);
 
+    if (isCommandProcessed(cmdId))
+    {
+        Serial.println("[communication_socet] уже обрабатывали эту команду, пропускаем -> " + cmdId);
+        return 0;
+    }
+    else
+    {
+        history.push_back(cmdId);
+        while (history.size() > 100)
+        {
+            history.pop_front(); // удаляем самый старый ID, чтобы не допустить бесконечного роста в случае постоянного потока команд
+        }
+    }
+
+    int com{-1};
+    for (int i{}; i < Skeleton::end; ++i)
+    {
+        if (command == Skeleton::commands[i])
+        {
+            com = i;
+            break;
+        }
+    }
+    if (com == -1)
+    {
+        Serial.println("[ERR] Неизвестная команда -> " + command);
+        return -3;
+    }
+    packet.remove(0, 4);
+    switch (com)
+    {
+    case Skeleton::intent:
+        Serial.println("[LOG] Команда INTENT");
+        parseIntent(packet);
+        break;
+    case Skeleton::ping_pong:
+        Serial.println("[LOG] Команда PING_PONG");
+        break;
+    default:
+        Serial.println("[LOG] Команда " + command);
+        Serial.println("[LOG] Данных для обработки нет");
+        Serial.println(packet);
+        break;
+    }
     return 0;
 }
 

@@ -5,7 +5,7 @@
 MyWiFi wifi{};
 Config configG{};
 CLOCK myclock{};
-Internet inet{&myclock};
+Internet inet{myclock};
 std::vector<Adafruit_MCP23X17 *> mcpG{};
 const std::pair<int, int> wire_pair{4, 5};
 
@@ -14,7 +14,7 @@ DeviceBinder * device_binder{new DeviceBinder {}};
 ScheduledIntentStore *store{new ScheduledIntentStore{}};
 Arbitrator * arbitrator{new Arbitrator{*store}};
 IntentExecutor *intent_executor{new IntentExecutor{}}; 
-bool updateDATA{false};
+
 
 
 

@@ -12,7 +12,7 @@
 
 using PinId = uint16_t;
 
-class PIN : public Skeleton, public IExecutor
+class PIN :  public IExecutor
 {
 public:
   PIN() = delete;

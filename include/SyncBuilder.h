@@ -3,10 +3,13 @@
 #include <WiFiClient.h>
 #include <memory>
 #include "encryption.h"
+#include <deque>
+#include <unordered_map>
+#include "authorization.h"
 
 using PinId = uint16_t;
 
-class SyncBuilder : private Skeleton
+class SyncBuilder 
 {
 public:
     void buildPINsSnapshot(String &out) const;
@@ -17,6 +20,7 @@ public:
     void buildPINsSnapshot(PinId id, String &out) const;
     void buildIntentSnapshot(ScheduledIntentID id, String &out) const;
     void buildDeviceSnapshot(uint16_t id, String &out) const;
+
 private:
 };
 
@@ -26,14 +30,17 @@ class ClientStreamSession
 public:
     ClientStreamSession() = delete;
     explicit ClientStreamSession(WiFiClient &client_);
+
     void begin();
     void reset();
+    ClientStreamSession(const ClientStreamSession &) = delete;
+    ClientStreamSession &operator=(const ClientStreamSession &) = delete;
 
 private:
     static uint32_t cmd_id_count;
-    void to_send(WiFiClient &client_, const String &body, const String &id_ = "");
-   
-   /* void sendFullStatus();*/
+    void to_send(WiFiClient &client_, const String &body);
+    String fullBody(const String &body, const String &id_ = "");
+    /* void sendFullStatus();*/
     void sendUpdatePins();
     void sendUpdateDevice();
     void sendUpdateStore();
@@ -47,6 +54,8 @@ private:
     WiFiClient &client;
     SyncBuilder builder{};
     Encryption enc{};
+    std::deque<String> buffer;
+    uint32_t time_send{};
 };
 
 // приём
@@ -56,12 +65,17 @@ public:
     ClientStreamReceiver() = delete;
     explicit ClientStreamReceiver(WiFiClient &client_);
     void begin();
+    ClientStreamReceiver(const ClientStreamReceiver &) = delete;
+    ClientStreamReceiver &operator=(const ClientStreamReceiver &) = delete;
 
 private:
     int communication_socet();
     String read_buffer();
+    bool isCommandProcessed(const String &id);
+    void parseIntent(const String &jsonStr);
     WiFiClient &client;
     Encryption enc{};
+    static std::deque<String> history;
 };
 
 /* Главный контроллер TCP */
@@ -69,13 +83,25 @@ class ClientTCP
 {
 public:
     ClientTCP() = delete;
-    explicit ClientTCP(WiFiClient &client_);
-    ~ClientTCP() = default;
+    explicit ClientTCP(WiFiClient &&client, CLOCK &myclock, bool isAuth);
+    ~ClientTCP();
 
-    void begin();
+    bool begin();
+    bool isConnected();
+    void set_isAuth(bool isAuth);
+    void set_adr(String adr);
+    void set_port(uint16_t port);
+
+    ClientTCP(const ClientTCP &) = delete;
+    ClientTCP &operator=(const ClientTCP &) = delete;
+
+    ClientTCP(ClientTCP &&) noexcept = default;
+    ClientTCP &operator=(ClientTCP &&) noexcept = default;
 
 private:
-    WiFiClient &client; // внешняя ссылка, не копируем
+    bool isAuth{false};
+    WiFiClient client; // внешняя ссылка, не копируем
+    Authorization auth;
     ClientStreamSession session;
     ClientStreamReceiver receiver;
 };

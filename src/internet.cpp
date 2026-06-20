@@ -10,40 +10,21 @@
 #include "pin.h"
 #include "globals.h"
 
-const unsigned long long Internet::epochDiff{1000 * 60 * 4};
-Internet::Internet(CLOCK *myclock)
-    : myclock(myclock), tcpServer(new WiFiServer{TCP_PORT}),test{client_server}
+Internet::Internet(CLOCK &myclock)
+    : tcpServer(new WiFiServer{TCP_PORT}), serwer{std::move(WiFiClient{}), myclock, true}
 {
-
 }
 // это нужно для первого подлючения к серверу и авторизации
 bool Internet::connect()
 {
-  if (WiFi.status() != WL_CONNECTED)
+  auto now = millis();
+  bool ok{false};
+  while (millis() - now < 500 && !ok)
   {
-    Serial.println("❌❌ Wi-Fi не подключен!");
-    return false;
+    ok = serwer.begin();
+    vTaskDelay(20);
   }
-  connect_server = false;
-  if (client_server.connect("api.midca.ru", 64530))
-  {
-    Serial.println("✅ Соединение с сервером установлено");
-    client_server.print(body());
-    client_server.flush();
-    if (client_server.available())
-    {
-      Serial.println("[LOG] Клиент выслал данные. Internet::connect()");
-      bool ok = authorization();
-      return ok;
-    }
-    return false;
-  }
-  else
-  {
-    Serial.println("[ERR]❌ Не удалось подключиться к серверу -2");
-    client_server.stop();
-    return false;
-  }
+  return ok;
 }
 
 void Internet::startTCPSerwer()
@@ -56,45 +37,38 @@ void Internet::startTCPSerwer()
   Udp.begin(1001);
 }
 
-String Internet::body()
+void Internet::processServerResponse()
 {
-
-  Encryption enc{};
-  Serial.println("[LOG] Отправка авторизации серверу");
-  String body = Skeleton::commands[Skeleton::idESP];
-  int sizeID = Skeleton::id.length();
-  body += String((int)sizeID);
-  Serial.print("[LOG] 🔗 idEsp-> ");
-  Serial.println(Skeleton::id);
-  body += Skeleton::id;
-  String secret = "?6G:N0$ua;0n[?hu";
-  unsigned long long epoch = myclock->getEpoch_hash();
-
-  String hash = Encryption::get_hash(epoch, Skeleton::id, enc.get_key());
-  body += hash;
-  return body;
-}
-bool Internet::authorization()
-{
-  size_t size{};
-  char *data = read_buffer(size);
-  String packet(data, size);
-  delete[] data;
-  if (packet == Skeleton::commands[Skeleton::accepted])
+  while (true)
   {
-    connect_server = true;
-    time_ping_pong = millis();
-    serverOK = true;
-    Serial.println("[LOG]✅ Авторизация прошла успешно");
-    return 0;
-  }
-  else
-  {
-    Serial.println("[ERR]❌ Ошибка авторизации c сервером!");
-    return -24;
+    vTaskDelay(5);
+    serwer.begin();
+    WiFiClient clientDevice = tcpServer->available();
+    if (clientDevice && clients.size() < 15)
+    {
+      Serial.println("[Internet] Подлючился девайс");
+      clients.emplace_back(new ClientTCP{std::move(clientDevice), myclock, false});
+    }
+
+    for (auto it = clients.begin(); it != clients.end();)
+    {
+      if (!(*it)->isConnected())
+      {
+        Serial.println("[Internet] Удаляем невалидного клиента");
+        delete *it; 
+        it = clients.erase(it);
+      }
+      else
+      {
+        (*it)->begin();
+        ++it;
+      }
+    }
+    communication_udp();
   }
 }
 
+#if FW_BUILD == 6
 void Internet::processServerResponse()
 {
 
@@ -150,16 +124,15 @@ void Internet::processServerResponse()
       {
         Serial.println();
         Serial.println("[LOG] ------------- Сервер выслал данные. -----------");
-        if (communication_socet(client_server) >= 0)
-        {
-          serverOK = true;
-        }
+
+        serverOK = true;
+
         Serial.println("[LOG] ------------- Закончили с сервером  ----------- ");
         Serial.println();
       }
       else
       {
-        authorization();
+        // authorization();
       }
     }
     auto device_full = [&]()
@@ -175,7 +148,7 @@ void Internet::processServerResponse()
       }
     };
     {
-      
+
       if (updateDATA)
       {
         device_full();
@@ -194,7 +167,7 @@ void Internet::processServerResponse()
         }
       }
     }
-    ping_pong();
+    // ping_pong();
     test.begin();
   }
 }
@@ -262,7 +235,7 @@ void Internet::full_status(WiFiClient &client_)
 {
 
   CommandExecutor comEx;
-  
+
   if (updateDATA || fullStatus.isEmpty())
   {
     fullStatus = Encryption::encrypt(comEx.full_status_json());
@@ -394,14 +367,6 @@ int Internet::process_cmd(String &decrypted)
     return 0;
   }
 
-  if (comm == Skeleton::pir)
-  {
-    err = comEx.playSensor(decrypted);
-   
-    return err;
-  }
-  
-
   if (comm == Skeleton::status_full)
   {
     return Skeleton::status_full;
@@ -422,6 +387,7 @@ int Internet::process_cmd(String &decrypted)
   }
   return err;
 }
+
 String Internet::read_buffer(WiFiClient &client_)
 {
   /*
@@ -527,14 +493,15 @@ String Internet::read_buffer(WiFiClient &client_)
   Serial.println("[ERR] ❌ Пакет не прочитан (таймаут)");
   return {};
 }
-
+#endif
 void Internet::communication_udp()
+
 {
   int packetSize = Udp.parsePacket(); // проверяем, пришёл ли пакет
   if (packetSize)
   {
     if (packetSize > 50)
-    { // больше 10 символов не принимаем
+    { 
       // читаем и отбрасываем
       char discard[packetSize];
       Udp.read(discard, packetSize);
@@ -542,8 +509,8 @@ void Internet::communication_udp()
       return;
     }
 
-    char buffer[50];                // 10 символов + нуль
-    int len = Udp.read(buffer, 50); // читаем максимум 10
+    char buffer[50];                
+    int len = Udp.read(buffer, 50); 
     buffer[len] = 0;                // завершаем строку нулём
 
     auto receivedRequest = String(buffer); // сохраняем в переменную
