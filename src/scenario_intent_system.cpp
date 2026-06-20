@@ -73,7 +73,6 @@ void ScheduledIntentStore::update()
             intent.updatedAt = now;
             intent.version++;
             changed = true;
-            
         }
         if (intent.state == IntentState::TO_DELETE && now - intent.updatedAt > 10000)
         {
@@ -474,6 +473,55 @@ void ScheduledIntent::fill_json(JsonArray &arr) const
     rezult.fill_json(rezultJson);
 }
 
+bool ScheduledIntent::fill_from_json(const JsonObject &obj)
+{
+    if (!obj["id"].isNull() || !obj["executedAt"].isNull() || !obj["updatedAt"].isNull() || !obj["ExecuteMeta"].isNull())
+    {
+        Serial.println("[ScheduledIntent] Неверный формат в JSON, указаное поле генерируется автоматически и не должно присутствовать в JSON");
+        return false;
+    }
+
+    if (!obj["life"].isNull())
+    {
+        uint8_t v = obj["life"].as<uint8_t>();
+        if (!enum_from_u8(v, life, to_u8(LifetimeType::UNENDING)))
+            return false;
+    }
+    if (!obj["source"].isNull())
+    {
+        uint8_t v = obj["source"].as<uint8_t>();
+        if (!enum_from_u8(v, source, to_u8(IntentSource::SYSTEM)))
+            return false;
+    }
+    if (!obj["state"].isNull())
+    {
+        uint8_t v = obj["state"].as<uint8_t>();
+        if (!enum_from_u8(v, state, to_u8(IntentState::TO_DELETE)))
+            return false;
+    }
+    if (!obj["urgency"].isNull())
+    {
+        uint8_t v = obj["urgency"].as<uint8_t>();
+        if (!enum_from_u8(v, urgency, to_u8(IntentUrgency::EMERGENCY)))
+            return false;
+    }
+    if (!obj["createdAt"].isNull())
+    {
+        createdAt = obj["createdAt"].as<timeMS>();
+    }
+
+    if (obj["Schedule"].isNull() || obj["Intent"].isNull() || !obj["Schedule"].is<JsonObject>() || !obj["Intent"].is<JsonObject>())
+    {
+        Serial.println("[ScheduledIntent] Неверный формат в JSON, отсутствует обязательное поле Schedule или Intent");
+        return false;
+    }
+
+    auto scheduleJson = obj["Schedule"].as<JsonObject>();
+    auto intentJson = obj["Intent"].as<JsonObject>();
+
+    return schedule.fill_from_json(scheduleJson) && intent.fill_from_json(intentJson);
+}
+
 bool ExecuteMeta::operator==(const ExecuteMeta &other) const
 {
     return rezult == other.rezult &&
@@ -511,27 +559,60 @@ void Intent::fill_json(JsonObject &obj) const
 
     obj["TargetID"] = targetID;
     if (to_u8(type) != 0)
-        obj["Action"] = to_u8(type);
-    auto fade = std::get_if<ConnectPayload>(&payload);
-    if (fade)
+        obj["ActionType"] = to_u8(type);
+    if (auto fade = std::get_if<ConnectPayload>(&payload))
     {
-        JsonArray arrJ = obj["Connect"].to<JsonArray>();
+        JsonObject arrJ = obj["Connect"].to<JsonObject>();
         fade->fill_json(arrJ);
         return;
     }
-    auto fade_ = std::get_if<FadePayload>(&payload);
-    if (fade_)
+    if (auto fade = std::get_if<FadePayload>(&payload))
     {
-        JsonArray arrJ = obj["Fade"].to<JsonArray>();
-        fade_->fill_json(arrJ);
+        JsonObject arrJ = obj["Fade"].to<JsonObject>();
+        fade->fill_json(arrJ);
         return;
     }
 }
 
-void FadePayload::fill_json(JsonArray &arr) const
+bool Intent::fill_from_json(const JsonObject &obj)
+{
+    if (obj["TargetID"].isNull())
+    {
+        return false;
+    }
+    targetID = obj["TargetID"].as<TargetRefID>();
+
+    if (!obj["ActionType"].isNull())
+    {
+        uint8_t v = obj["ActionType"].as<uint8_t>();
+        if (!enum_from_u8(v, type, to_u8(ActionType::ENABLE_FADE)))
+            return false;
+    }
+
+    if (obj["Connect"].is<JsonObject>())
+    {
+        JsonObject c = obj["Connect"].as<JsonObject>();
+        if (c["obj"].isNull())
+        {
+            return false;
+        }
+        ConnectPayload p;
+        p.obj = c["obj"].as<uint32_t>();
+        payload = p;
+    }
+    else if (obj["Fade"].is<JsonObject>())
+    {
+        JsonObject f = obj["Fade"].as<JsonObject>();
+        FadePayload p;
+        p.fill_from_json(f);
+        payload = p;
+    }
+    return true;
+}
+
+void FadePayload::fill_json(JsonObject &obj) const
 {
 
-    JsonObject obj = arr.add<JsonObject>();
     if (from != to)
     {
         obj["from"] = from;
@@ -541,10 +622,26 @@ void FadePayload::fill_json(JsonArray &arr) const
         obj["time"] = durationMs;
 }
 
-void ConnectPayload::fill_json(JsonArray &arr) const
+bool FadePayload::fill_from_json(const JsonObject &obj)
 {
-    JsonObject objJ = arr.add<JsonObject>();
-    objJ["obj"] = obj;
+    if (!obj["from"].isNull())
+    {
+        from = obj["from"].as<uint8_t>();
+    }
+    if (!obj["to"].isNull())
+    {
+        to = obj["to"].as<uint8_t>();
+    }
+    if (!obj["time"].isNull())
+    {
+        durationMs = obj["time"].as<uint32_t>();
+    }
+    return true;
+}
+
+void ConnectPayload::fill_json(JsonObject &obj) const
+{
+    obj["obj"] = this->obj;
 }
 void Schedule::fill_json(JsonObject &obj) const
 {
@@ -553,6 +650,19 @@ void Schedule::fill_json(JsonObject &obj) const
         obj["start"] = startTime;
         obj["end"] = endTime;
     }
+}
+
+bool Schedule::fill_from_json(const JsonObject &obj)
+{
+    if (!obj["start"].isNull())
+    {
+        startTime = obj["start"].as<timeMS>();
+    }
+    if (!obj["end"].isNull())
+    {
+        endTime = obj["end"].as<timeMS>();
+    }
+    return true;
 }
 
 inline const char *toString(IntentState v)

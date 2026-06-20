@@ -11,76 +11,19 @@ public:
 
   enum
   {
-    pin1,
-    pin2,
-    pin3,
-    pin4,
-    pin5,
-    pin6,
-    pin7,
-    pin8,
-    pin9,
-    pin10,
-    pin11,
-    pin12,
-    pin13,
-    pin14,
-    pin15,
-    pin16,
-    pin17,
-    pin18,
-    pin19,
-    pin20,
-    pin21,
-    pin22,
-    pin23,
-    pin24,
-    pin25,
-    pin26,
-    pin27,
-    pin28,
-    pin29,
-    pin30,
-    pin31,
-    pin32,
-    pin33,
-    pin34,
-    pin35,
+    accepted, start , finish,
 
-    idESP,
-    idUSER,
-    idSer,
+    idESP, idUSER, idSer, 
 
-    accepted,
-    start,
-    separator,
-    finish,
+    intent, ping_pong,
 
-    on,
-    off,
-    time_on,
-    time_off,
-    user_on,
-    user_off,
-
-    script_on,
-    script_off,
-    brightness,
-
-    pir,push,remove,sm,
-
-    status,
-    snapshot_device,
-    snapshot_store,
-    snapshot_intent,
-    snapshot_pins,
-    snapshot_connect,
-    status_full,
+    snapshot_device, snapshot_store, snapshot_intent, 
+    snapshot_pins,  snapshot_connect, 
 
     end
   };
   static const std::array<String, Skeleton::end> commands;
-  String id{};
+  static String id;
 };
 
 enum class LockPolicyType

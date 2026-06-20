@@ -22,7 +22,7 @@ int CommandExecutor::begin(const String &packet) const
 }
 int CommandExecutor::playPIN(const String &packet, int pinNumber) const
 {
-
+/*
   size_t size = packet.length();
   if (size < 5)
     return -12;
@@ -80,11 +80,14 @@ int CommandExecutor::playPIN(const String &packet, int pinNumber) const
       return 0;
     }
   }
+    */
   return -7;
+  
 }
 
 int CommandExecutor::playSensor(const String &packet) const
 {
+  /*
   size_t size = packet.length();
   if (size < 12)
     return -3;
@@ -164,11 +167,12 @@ int CommandExecutor::playSensor(const String &packet) const
   }
 
   Serial.println("[INF] обработка Pir не удалась");
+  */
   return -8;
 }
 
 String CommandExecutor::full_status_json() const
-{
+{/*
   JsonDocument mainDoc{};
   mainDoc["ID"] = id;
   mainDoc["time"] = millis();
@@ -192,4 +196,6 @@ String CommandExecutor::full_status_json() const
  // Serial.println(" байт");
   return Skeleton::commands[Skeleton::status_full] + out; // возвращаем строку
   // return  out; // возвращаем строку
+  */
+ return {};
 }

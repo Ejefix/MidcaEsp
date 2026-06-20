@@ -3,7 +3,7 @@
 #include <skeleton.h>
 #include <Arduino.h>
 
-class CommandExecutor : public Skeleton
+class CommandExecutor 
 {
 public:
     CommandExecutor();

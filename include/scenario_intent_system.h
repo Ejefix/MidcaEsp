@@ -15,6 +15,16 @@ inline uint8_t to_u8(T v)
 {
     return static_cast<uint8_t>(v);
 }
+
+template <typename T>
+inline bool enum_from_u8(uint8_t v, T &out, uint8_t max)
+{
+    if (v > max)
+        return false;
+
+    out = static_cast<T>(v);
+    return true;
+}
 // текущий статус намериния, его состояние
 enum class IntentState : uint8_t
 {
@@ -147,13 +157,14 @@ struct FadePayload
     uint8_t from{};        // стартовая яркость
     uint8_t to{};          // конечная яркость
     uint32_t durationMs{}; // время перехода
-    void fill_json(JsonArray &arr) const;
+    void fill_json(JsonObject &obj) const;
+    bool fill_from_json(const JsonObject &obj);
 };
 // создать коннект
 struct ConnectPayload
 {
     uint32_t obj{}; // ID
-    void fill_json(JsonArray &arr) const;
+    void fill_json(JsonObject &obj) const;
 };
 
 /*
@@ -208,6 +219,7 @@ struct Intent
 
     IntentPayload payload{}; // данные необходимые для выполнения
     void fill_json(JsonObject &obj) const;
+    bool fill_from_json(const JsonObject &obj);
 };
 // время когда выполнять намериние
 struct Schedule
@@ -216,6 +228,7 @@ struct Schedule
     timeMS endTime{};
     bool operator==(const Schedule &other) const;
     void fill_json(JsonObject &obj) const;
+    bool fill_from_json(const JsonObject &obj);
 };
 // IntentFailArbitrator заполняется только если Arbitrator не пропустил
 // blockingIntentID — всегда источник внешнего конфликта
@@ -232,9 +245,8 @@ struct ExecuteMeta
     IntentFailArbitrator reason{};
     ScheduledIntentID blockingIntentIDArbitrator{};
 
-   
-    bool operator==(const ExecuteMeta& other) const;
-    bool operator!=(const ExecuteMeta& other) const;
+    bool operator==(const ExecuteMeta &other) const;
+    bool operator!=(const ExecuteMeta &other) const;
     void fill_json(JsonObject &obj) const;
 };
 
@@ -254,6 +266,7 @@ struct ScheduledIntent
     ExecuteMeta rezult{};
     void printF() const;
     void fill_json(JsonArray &arr) const;
+    bool fill_from_json(const JsonObject &obj);
     uint32_t version{1};
 };
 
@@ -283,7 +296,7 @@ public:
     uint8_t resolvePriority(const IntentSource &source, const IntentUrgency &urgency) const;
     uint32_t get_version(ScheduledIntentID id) const;
     uint32_t get_version() const;
-    
+
     std::vector<ScheduledIntentID> get_list_id() const;
 
     bool setStateExecutor(ScheduledIntentID id, ExecuteResult res, ScheduledIntentID blockingIntentID = 0);

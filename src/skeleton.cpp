@@ -3,43 +3,22 @@
 #include <FS.h>
 #include <SPIFFS.h>
 #include "globals.h"
+
 const std::array<String, Skeleton::end> Skeleton::commands{
-      "%p01", "%p02", "%p03", "%p04", "%p05",
-      "%p06", "%p07", "%p08", "%p09", "%p10",
-      "%p11", "%p12", "%p13", "%p14", "%p15",
-      "%p16", "%p17", "%p18", "%p19", "%p20",
-      "%p21", "%p22", "%p23", "%p24", "%p25",
-      "%p26", "%p27", "%p28", "%p29", "%p30",
-      "%p31", "%p32", "%p33", "%p34", "%p35",
+    
+    "%G00","%G01","%G02",
+    "%I00", "%I01", "%I02",
 
-      "%I00", "%I11", "%I88",
-      "%G00",
-      "%S00",
-      "%S01",
-      "%F00",
+    "%A01", "%AM0",
 
-      "%O01",
-      "%O02",
-      "%t01", "%t02", "%U01", "%U02",
-
-      "%U03", "%U04", "%B04",
-
-      "%P00", "%A00", "%A01", "%SM0",
-
-      "%S10",
-      "%S11",
-      "%S12",
-      "%S13",
-      "%S14",
-      "%S15",
-      "%S16"
-
-    };
-
+    "%S10", "%S11", "%S12",
+    "%S13", "%S14"
+    
+};
+String Skeleton::id = String((uint64_t)ESP.getEfuseMac());
 Skeleton::Skeleton()
 {
-  uint64_t esp = ESP.getEfuseMac(); // 1️⃣ Получаем уникальный MAC в 64 бит
-  id = String((uint64_t)esp);
+  
 }
 
 ExecuteResult IExecutor::execute(const ScheduledIntent &intent, uint8_t priority, LockPolicyType policy, timeMS endTime)

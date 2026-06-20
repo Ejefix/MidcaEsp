@@ -235,5 +235,5 @@ void loop()
   }
   store->update();
   updatePinsIntentTask();
-  vTaskDelay(2);
+  vTaskDelay(5);
 }
