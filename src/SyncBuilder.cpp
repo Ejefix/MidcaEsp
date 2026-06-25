@@ -145,25 +145,34 @@ void SyncBuilder::buildDeviceSnapshot(uint16_t id, String &out) const
 }
 
 ClientTCP::ClientTCP(WiFiClient &&client, CLOCK &myclock, bool isAuth)
-    : isAuth{isAuth},  client{std::move(client)}, auth{this->client, myclock}, session{this->client}, receiver{this->client}
+    : isAuth{isAuth}, client{std::move(client)}, auth{this->client, myclock}, session{this->client}, receiver{this->client}
 {
-
+    client.setNoDelay(true);
 }
 
 ClientTCP::~ClientTCP()
 {
-     client.stop();
+    client.stop();
 }
 
 bool ClientTCP::begin()
 {
+    if (millis() - time_reset > 1000 * 60)
+    {
+       time_reset = millis(); 
+       session.reset();
+    }
 
     if (isAuth)
     {
         if (auth.authorize())
         {
+            if (receiver.begin() == Skeleton::ping_pong)
+            {
+                session.ping_pong();
+                session.reset();
+            }
             session.begin();
-            receiver.begin();
             return true;
         }
     }
@@ -171,8 +180,13 @@ bool ClientTCP::begin()
     {
         if (!client.connected())
             return false;
+
+        if (receiver.begin() == Skeleton::ping_pong)
+        {
+            session.ping_pong();
+            session.reset();
+        }
         session.begin();
-        receiver.begin();
         return true;
     }
 
@@ -196,7 +210,7 @@ void ClientTCP::set_adr(String adr)
 
 void ClientTCP::set_port(uint16_t port)
 {
-     auth.set_port(port);
+    auth.set_port(port);
 }
 
 ClientStreamSession::ClientStreamSession(WiFiClient &client_) : client(client_)
@@ -210,13 +224,32 @@ void ClientStreamSession::begin()
     sendUpdateDevice();
     sendUpdateStore();
     sendUpdateConnect();
-    if (!buffer.empty() && millis() - time_send > 30)
+    if (!buffer.empty() && millis() - time_send > 10)
     {
         to_send(client, buffer.front());
         buffer.pop_front();
         time_send = millis();
     }
-    
+    static size_t last_size = 0;
+    static uint32_t last_print = 0;
+
+    if (millis() - last_print > 1000)
+    {
+        int diff = buffer.size() - last_size;
+
+        Serial.printf("buffer = %d diff = %d heap = %d\n",
+                      buffer.size(),
+                      diff,
+                      ESP.getFreeHeap());
+
+        last_size = buffer.size();
+        last_print = millis();
+    }
+}
+
+void ClientStreamSession::ping_pong()
+{
+    buffer.push_back(fullBody(enc.encrypt(Skeleton::commands[Skeleton::ping_pong])));
 }
 
 void ClientStreamSession::reset()
@@ -225,6 +258,7 @@ void ClientStreamSession::reset()
     versionIntent.clear();
     versionPINS.clear();
     versionDevice.clear();
+    buffer.clear();
     versionStore = 0;
     versionDevice_registry = 0;
     versionDevice_bind = 0;
@@ -322,7 +356,10 @@ void ClientStreamSession::sendUpdatePins()
             String out;
             out.reserve(200); // резервируем память для строки
             builder.buildPINsSnapshot(id, out);
-            buffer.push_back(fullBody(enc.encrypt(out)));
+            if (!out.isEmpty())
+            {
+                buffer.push_back(fullBody(enc.encrypt(out)));
+            }
         }
     }
 }
@@ -343,7 +380,10 @@ void ClientStreamSession::sendUpdateDevice()
                 out.reserve(200); // резервируем память для строки
                 versionDevice[list_idDevice[i]] = version;
                 builder.buildDeviceSnapshot(list_idDevice[i], out);
-                buffer.push_back(fullBody(enc.encrypt(out)));
+                if (!out.isEmpty())
+                {
+                    buffer.push_back(fullBody(enc.encrypt(out)));
+                }
             }
         }
     }
@@ -382,7 +422,10 @@ void ClientStreamSession::sendUpdateStore()
                 String out;
                 out.reserve(200); // резервируем память для строки
                 builder.buildIntentSnapshot(id, out);
-                buffer.push_back(fullBody(enc.encrypt(out)));
+                if (!out.isEmpty())
+                {
+                    buffer.push_back(fullBody(enc.encrypt(out)));
+                }
                 versionIntent[id] = version;
                 //  Serial.print("[ClientStreamSession] Интент id  ");
                 //  Serial.print(id);
@@ -403,7 +446,10 @@ void ClientStreamSession::sendUpdateConnect()
         String out;
         out.reserve(200); // резервируем память для строки
         builder.buildConnectSnapshot(out);
-        buffer.push_back(fullBody(enc.encrypt(out)));
+        if (!out.isEmpty())
+        {
+            buffer.push_back(fullBody(enc.encrypt(out)));
+        }
     }
 }
 
@@ -466,16 +512,14 @@ ClientStreamReceiver::ClientStreamReceiver(WiFiClient &client_) : client(client_
 {
 }
 
-void ClientStreamReceiver::begin()
+int ClientStreamReceiver::begin()
 {
     if (client.available())
     {
-        Serial.println();
-        Serial.println("[LOG] ------------- Сервер выслал данные. -----------");
-        communication_socet();
-        Serial.println("[LOG] ------------- Закончили с сервером  ----------- ");
-        Serial.println();
+
+        return communication_socet();
     }
+    return -1;
 }
 
 int ClientStreamReceiver::communication_socet()
@@ -488,8 +532,8 @@ int ClientStreamReceiver::communication_socet()
     }
 
     String cmdId = packet.substring(0, 4);
-    Serial.print("[LOG] Принята команда ID ");
-    Serial.println(cmdId);
+    // Serial.print("[LOG] Принята команда ID ");
+    // Serial.println(cmdId);
 
     packet.remove(0, 4);
     packet = enc.decrypt(packet); // <-- передать сюда
@@ -499,14 +543,14 @@ int ClientStreamReceiver::communication_socet()
         return -27;
     }
 
-    Serial.println("[LOG] получена команда -> " + packet);
+    // Serial.println("[LOG] получена команда -> " + packet);
     if (packet.length() < 4)
         return -2;
     String command = packet.substring(0, 4);
 
     if (isCommandProcessed(cmdId))
     {
-        Serial.println("[communication_socet] уже обрабатывали эту команду, пропускаем -> " + cmdId);
+        // Serial.println("[communication_socet] уже обрабатывали эту команду, пропускаем -> " + cmdId);
         return 0;
     }
     else
@@ -538,14 +582,12 @@ int ClientStreamReceiver::communication_socet()
     case Skeleton::intent:
         Serial.println("[LOG] Команда INTENT");
         parseIntent(packet);
-        break;
+        return Skeleton::intent;
     case Skeleton::ping_pong:
         Serial.println("[LOG] Команда PING_PONG");
-        break;
+        return Skeleton::ping_pong;
     default:
         Serial.println("[LOG] Команда " + command);
-        Serial.println("[LOG] Данных для обработки нет");
-        Serial.println(packet);
         break;
     }
     return 0;
@@ -588,7 +630,7 @@ String ClientStreamReceiver::read_buffer()
             }
             if (body.length() == 4 && body == Skeleton::commands[Skeleton::start])
             {
-                Serial.println("[LOG] Нашли начало пакета.");
+                // Serial.println("[LOG] Нашли начало пакета.");
             }
             // Считываем value
             if (!read && body.length() == 5)
@@ -600,8 +642,8 @@ String ClientStreamReceiver::read_buffer()
                     return {};
                 }
                 value = s - '0';
-                Serial.print("[STATE] value = ");
-                Serial.println(value);
+                // Serial.print("[STATE] value = ");
+                // Serial.println(value);
             }
 
             // Считываем sizeStr
@@ -618,30 +660,30 @@ String ClientStreamReceiver::read_buffer()
                 if (pktSize > 4500)
                     return {};
 
-                Serial.print("[STATE] pktSize = ");
-                Serial.println(pktSize);
+                // Serial.print("[STATE] pktSize = ");
+                //  Serial.println(pktSize);
 
                 body = "";
                 body.reserve(pktSize);
                 read = true;
-                Serial.println("[STATE] Начало чтения payload");
+                // Serial.println("[STATE] Начало чтения payload");
                 continue;
             }
 
             // Чтение payload
             if (read && body.length() == pktSize)
             {
-                Serial.println("[LOG] Пакет полностью считан");
+                // Serial.println("[LOG] Пакет полностью считан");
 
-                String hex = "";
-                for (size_t i = 0; i < body.length(); i++)
-                {
-                    char c = body[i];
-                    char buf[4];
-                    sprintf(buf, "%02X ", (unsigned char)c);
-                    hex += buf;
-                }
-                Serial.println("[HEX] " + hex);
+                //  String hex = "";
+                // for (size_t i = 0; i < body.length(); i++)
+                //   {
+                //      char c = body[i];
+                //      char buf[4];
+                //      sprintf(buf, "%02X ", (unsigned char)c);
+                //      hex += buf;
+                //   }
+                // Serial.println("[HEX] " + hex);
 
                 return body;
             }

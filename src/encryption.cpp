@@ -39,6 +39,12 @@ String Encryption::get_hash(unsigned long long time, const String &id, const Str
 
 String Encryption::encrypt(const String& plaintext) const
 {
+  // Защита от пустых данных
+  if (plaintext.isEmpty())
+  {
+    Serial.println("[Encryption::encrypt] WARNING: empty plaintext");
+    return "";
+  }
  
   // --- IV и TAG (маленькие, можно на стеке) ---
   const size_t iv_len = 12;                          // длина IV

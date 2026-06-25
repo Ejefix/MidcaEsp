@@ -32,6 +32,7 @@ public:
     explicit ClientStreamSession(WiFiClient &client_);
 
     void begin();
+    void ping_pong();
     void reset();
     ClientStreamSession(const ClientStreamSession &) = delete;
     ClientStreamSession &operator=(const ClientStreamSession &) = delete;
@@ -56,6 +57,7 @@ private:
     Encryption enc{};
     std::deque<String> buffer;
     uint32_t time_send{};
+    uint8_t counter{};
 };
 
 // приём
@@ -64,7 +66,7 @@ class ClientStreamReceiver
 public:
     ClientStreamReceiver() = delete;
     explicit ClientStreamReceiver(WiFiClient &client_);
-    void begin();
+    int begin();
     ClientStreamReceiver(const ClientStreamReceiver &) = delete;
     ClientStreamReceiver &operator=(const ClientStreamReceiver &) = delete;
 
@@ -104,4 +106,5 @@ private:
     Authorization auth;
     ClientStreamSession session;
     ClientStreamReceiver receiver;
+    uint32_t time_reset{};
 };
