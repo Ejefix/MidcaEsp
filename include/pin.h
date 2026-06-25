@@ -50,11 +50,11 @@ private:
   // ^=       <- перевернуть бит
   // unsigned char pin_info{FLAG_USER_OFF};
   IPinDriver *pin_driver{nullptr};
-  uint8_t brightness_to{100}; // конечная яркость для FADE
+  uint8_t brightness_to{200}; // конечная яркость для FADE
   uint8_t brightness_from{0}; // начальная яркость для FADE
   double brightness{0};       // текущая яркость для FADE
   double step{0};             // шаг изменения яркости для FADE
-  uint32_t timeFADE{};        // время установки яркости от brightness_from до brightness_to
+  uint32_t timeFADE{1000*60*10};        // время установки яркости от brightness_from до brightness_to
   uint32_t timeStep{};        // время последнего обновления яркости для FADE
   uint32_t version{1};
 };

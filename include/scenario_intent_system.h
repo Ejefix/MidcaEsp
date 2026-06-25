@@ -5,6 +5,7 @@
 #include <variant>
 #include <ArduinoJson.h>
 #include <atomic>
+#include <mutex>
 
 // содержит индефикатор типа и его id
 using TargetRefID = uint32_t;
@@ -297,14 +298,14 @@ public:
     uint32_t get_version(ScheduledIntentID id) const;
     uint32_t get_version() const;
 
-    std::vector<ScheduledIntentID> get_list_id() const;
+    std::vector<ScheduledIntentID> get_list_id();
 
     bool setStateExecutor(ScheduledIntentID id, ExecuteResult res, ScheduledIntentID blockingIntentID = 0);
 
     bool setIntentCommand(ScheduledIntentID id, IntentCommand res, ScheduledIntentID initiatorID);
     // может вернуть  std::nullopt;
-    std::optional<ScheduledIntent> get(ScheduledIntentID id) const;
-    void fill_json(JsonArray &arr) const;
+    std::optional<ScheduledIntent> get(ScheduledIntentID id) ;
+    void fill_json(JsonArray &arr);
     size_t size() const;
 
     void printI();
@@ -319,7 +320,7 @@ protected:
     // переключает на следущие сутки
     bool moveToNextDay(const ScheduledIntentID &id);
     // цель и отсортированный ( по Priority от min -> max ) вектор ID
-    const std::unordered_map<TargetRefID, std::vector<ScheduledIntentID>> all() const;
+    const std::unordered_map<TargetRefID, std::vector<ScheduledIntentID>> all() ;
 
 private:
     std::unordered_map<ScheduledIntentID, ScheduledIntent> store{};
@@ -335,4 +336,6 @@ private:
 
     ScheduledIntentID nextId{1};
     uint32_t version{1};
+    std::mutex mutex_store;
+    std::mutex mutex_scheduler;
 };

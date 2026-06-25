@@ -12,7 +12,7 @@
 #define FW_RELAY 1
 #define FW_PWM   2
 
-#define FW_BUILD FW_RELAY
+#define FW_BUILD FW_PWM
 
 
 // Настройки Wi-Fi

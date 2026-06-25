@@ -4,7 +4,6 @@
 #include "setupesp.h"
 #include "globals.h"
 
-
 uint16_t PIN::id_pin{3001};
 
 PIN::PIN(IPinDriver *pin_driver_) : pin_driver(pin_driver_), id{id_pin}
@@ -16,6 +15,7 @@ PIN::PIN(IPinDriver *pin_driver_) : pin_driver(pin_driver_), id{id_pin}
   }
   else
   {
+   
     step = (brightness_to - brightness_from) / static_cast<double>(timeFADE);
   }
 }
@@ -68,7 +68,7 @@ DeviceResult PIN::executeAction(const ScheduledIntent &intent)
     timeFADE = fade->durationMs;
     brightness_to = fade->to;
     brightness_from = fade->from;
-    if(brightness_from > brightness_to)
+    if (brightness_from > brightness_to)
     {
       std::swap(brightness_from, brightness_to);
     }
@@ -130,9 +130,11 @@ void PIN::begin()
   if (!activPIN)
   {
     brightness = brightness_from;
+    timeStep  =  millis();
   }
   else
   {
+    
     if (timeFADE == 0)
     {
       brightness = brightness_to;
@@ -140,6 +142,7 @@ void PIN::begin()
     else
     {
       auto now = millis();
+      
       auto elapsed = now - timeStep;
       timeStep = now;
 
@@ -151,9 +154,10 @@ void PIN::begin()
       }
     }
   }
-
+  uint8_t value = static_cast<uint8_t>(
+      std::clamp(std::round(brightness), 0.0, 255.0));
   // если драйвер принял изменения, увеличиваем версию для синхронизации
-  if (pin_driver->write(activPIN, static_cast<uint8_t>(brightness)))
+  if (pin_driver->write(activPIN, value))
   {
     ++version;
   }

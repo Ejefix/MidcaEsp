@@ -89,7 +89,6 @@ void IntentExecutor::executorDEVICE(const ScheduledIntent &intent) const
         }
         else
         {
-
             store->setStateExecutor(intent.id, ExecuteResult::FAIL_CAST);
         }
     }

@@ -59,12 +59,12 @@ bool PWMDriver::write(bool on, uint8_t b)
     brightness = b; // сохраняем состояние
     state = on;
     ledcWrite(channel, on ? b : 0);
-    Serial.print("[INF] записали в  канал ");
-    Serial.print(channel);
-    Serial.print(" пин ");
-    Serial.print(pin);
-    Serial.print(" яркость ");
-    Serial.println(b);
+   // Serial.print("[INF] записали в  канал ");
+   // Serial.print(channel);
+   // Serial.print(" пин ");
+   // Serial.print(pin);
+  //  Serial.print(" яркость ");
+  //  Serial.println(b);
     return true;
 }
 

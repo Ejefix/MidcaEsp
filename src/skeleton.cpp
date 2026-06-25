@@ -5,20 +5,19 @@
 #include "globals.h"
 
 const std::array<String, Skeleton::end> Skeleton::commands{
-    
-    "%G00","%G01","%G02",
+
+    "%G00", "%G01", "%G02",
     "%I00", "%I01", "%I02",
 
     "%A01", "%AM0",
 
     "%S10", "%S11", "%S12",
     "%S13", "%S14"
-    
+
 };
 String Skeleton::id = String((uint64_t)ESP.getEfuseMac());
 Skeleton::Skeleton()
 {
-  
 }
 
 ExecuteResult IExecutor::execute(const ScheduledIntent &intent, uint8_t priority, LockPolicyType policy, timeMS endTime)
@@ -109,27 +108,24 @@ ExecuteResult IExecutor::execute(const ScheduledIntent &intent, uint8_t priority
   DeviceResult answer;
   switch (intent.intent.type)
   {
-  case ActionType::ON:
-  case ActionType::OFF:
-  case ActionType::TOGGLE:
-  case ActionType::FADE:
+  
+  case ActionType::ENABLE_TOGGLE:
+    promote_lock(active, pending);
+    active_power_lock = Lock{};
+    rezult = ExecuteResult::SUCCESS;
+    break;
+  case ActionType::ENABLE_FADE:
+    promote_lock(active, pending);
+    active_brightness_lock = Lock{};
+    rezult = ExecuteResult::SUCCESS;
+    break;
+  default:
     answer = executeAction(intent);
     if (answer == DeviceResult::SUCCESS)
     {
       promote_lock(active, pending);
       break;
     }
-
-  case ActionType::ENABLE_TOGGLE:
-    promote_lock(active, pending);
-    active_power_lock = Lock{};
-    break;
-  case ActionType::ENABLE_FADE:
-    promote_lock(active, pending);
-    active_brightness_lock = Lock{};
-    break;
-  default:
-    answer = executeAction(intent);
   }
   switch (answer)
   {

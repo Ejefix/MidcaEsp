@@ -22,7 +22,7 @@ private:
     char *read_buffer(size_t &buffer_size);
     bool authorization();
     uint32_t authRetryTimer{};
-    const uint32_t authPause{20000};
+    const uint32_t authPause{1000*60*3};
     WiFiClient &client;
     CLOCK &myclock;
     bool connect{false};
