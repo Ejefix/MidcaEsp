@@ -17,14 +17,8 @@ Internet::Internet(CLOCK &myclock)
 // это нужно для первого подлючения к серверу и авторизации
 bool Internet::connect()
 {
-  auto now = millis();
-  bool ok{false};
-  while (millis() - now < 500 && !ok)
-  {
-    ok = serwer.begin();
-    vTaskDelay(20);
-  }
-  return ok;
+
+  return serwer.begin();
 }
 
 void Internet::startTCPSerwer()
@@ -55,7 +49,7 @@ void Internet::processServerResponse()
       if (!(*it)->isConnected())
       {
         Serial.println("[Internet] Удаляем невалидного клиента");
-        delete *it; 
+        delete *it;
         it = clients.erase(it);
       }
       else
@@ -65,6 +59,12 @@ void Internet::processServerResponse()
       }
     }
     communication_udp();
+    static uint32_t last_print = 0;
+    if (millis() - last_print > 10000)
+    {
+      Serial.println("Поток TCP работает");
+      last_print = millis();
+    }
   }
 }
 
@@ -501,7 +501,7 @@ void Internet::communication_udp()
   if (packetSize)
   {
     if (packetSize > 50)
-    { 
+    {
       // читаем и отбрасываем
       char discard[packetSize];
       Udp.read(discard, packetSize);
@@ -509,9 +509,9 @@ void Internet::communication_udp()
       return;
     }
 
-    char buffer[50];                
-    int len = Udp.read(buffer, 50); 
-    buffer[len] = 0;                // завершаем строку нулём
+    char buffer[50];
+    int len = Udp.read(buffer, 50);
+    buffer[len] = 0; // завершаем строку нулём
 
     auto receivedRequest = String(buffer); // сохраняем в переменную
     Serial.print("Принято: ");

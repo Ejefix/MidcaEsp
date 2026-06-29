@@ -9,16 +9,16 @@
 
 using PinId = uint16_t;
 
-class SyncBuilder 
+class SyncBuilder
 {
 public:
     void buildPINsSnapshot(String &out) const;
     void buildDeviceSnapshot(String &out) const;
-    void buildIntentSnapshot(String &out) const;
+    void buildSTORESnapshot(String &out) const;
     void buildConnectSnapshot(String &out) const;
 
-    void buildPINsSnapshot(PinId id, String &out) const;
-    void buildIntentSnapshot(ScheduledIntentID id, String &out) const;
+    void buildPINsSnapshot(std::vector<PinId> ids, String &out) const;
+    void buildIntentSnapshot(std::vector<ScheduledIntentID> id, String &out) const;
     void buildDeviceSnapshot(uint16_t id, String &out) const;
 
 private:
@@ -46,6 +46,8 @@ private:
     void sendUpdateDevice();
     void sendUpdateStore();
     void sendUpdateConnect();
+    // удаляет из списка, если неу этих ID в магазине
+    void controlversionIntent(const std::vector<ScheduledIntentID> &actual);
     std::unordered_map<ScheduledIntentID, uint32_t> versionIntent{};
     std::unordered_map<PinId, uint32_t> versionPINS{};
     std::unordered_map<uint16_t, uint32_t> versionDevice{};
@@ -54,10 +56,14 @@ private:
     uint32_t versionDevice_bind{};
     WiFiClient &client;
     SyncBuilder builder{};
+    std::deque<String> bufferPINS{};
+    std::deque<String> bufferIntent{};
     Encryption enc{};
     std::deque<String> buffer;
     uint32_t time_send{};
     uint8_t counter{};
+    uint8_t currentQueue{};
+    uint32_t last_PINS{};
 };
 
 // приём

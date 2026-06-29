@@ -42,22 +42,20 @@ void Arbitrator::beginTarget(const std::vector<ScheduledIntentID> &vec) const
             continue;
         }
         auto answer = resolve_lifecycle(candidate);
+
         if (candidate.rezult.rezult == ExecuteResult::NONE)
         {
             if (candidate.life != LifetimeType::ONCE_TRY && candidate.life != LifetimeType::UNENDING)
             {
-                if (answer == LifecycleResolution::WAIT)
-                {
-                    continue;
-                }
+
                 if (answer == LifecycleResolution::EXPIRED)
                 {
                     ExecuteMeta rezult{candidate.rezult};
                     rezult.reason = IntentFailArbitrator::BLOCKED_BY_OTHER_INTENT;
                     if (candidate.life == LifetimeType::REPEAT)
                     {
-                        store.moveToNextDay(candidate.id);
                         store.setState(candidate.id, IntentState::ACTIVE, rezult);
+                        store.moveToNextDay(candidate.id);
                     }
                     else
                     {
@@ -95,16 +93,24 @@ void Arbitrator::beginTarget(const std::vector<ScheduledIntentID> &vec) const
             }
             case LifetimeType::REPEAT:
             {
+
+                if (answer == LifecycleResolution::WAIT)
+                {
+                    ExecuteMeta rezult{candidate.rezult};
+                    rezult.reason = IntentFailArbitrator::DEFERRED_BY_ARBITRATOR;
+                    store.setMeta(candidate.id, rezult);
+                    continue;
+                }
                 if (answer == LifecycleResolution::EXECUTE)
                 {
                     break;
                 }
                 if (answer == LifecycleResolution::EXPIRED)
                 {
-                    store.moveToNextDay(candidate.id);
                     ExecuteMeta rezult{candidate.rezult};
                     rezult.reason = IntentFailArbitrator::TIME_EXPIRED_AFTER_ATTEMPTS;
                     store.setState(candidate.id, IntentState::ACTIVE, rezult);
+                    store.moveToNextDay(candidate.id);
                     continue;
                 }
             }
@@ -175,13 +181,13 @@ LifecycleResolution Arbitrator::resolve_lifecycle(const ScheduledIntent &candida
     auto time = myclock.getEpochMillis();
     const auto &sched = candidate.schedule;
 
-    if (time >= sched.startTime && time <= sched.endTime)
+    if (sched.startTime < time && time < sched.endTime)
     {
         return LifecycleResolution::EXECUTE;
     }
 
     // Ещё не началось
-    if (time < sched.startTime)
+    if (sched.startTime > time)
     {
         return LifecycleResolution::WAIT;
     }

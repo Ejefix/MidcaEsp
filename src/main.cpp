@@ -73,13 +73,16 @@ void updatePinsIntentTask()
 {
   uint32_t now = millis(); // текущее время
 
-  if (now - lastPinsIntentUpdate >= 60000) // 60 секунд
+  if (now - lastPinsIntentUpdate >= 1000) // 60 секунд
   {
     createPinsIntents();        // запускаем генерацию
     lastPinsIntentUpdate = now; // обновляем таймер
   }
 }
 String cmd{};
+size_t last_size = 0;
+uint32_t last_print = 0;
+
 void printRAM()
 {
   Serial.println("=== RAM REPORT ===");
@@ -120,7 +123,10 @@ void loop()
       {
         store->printI();
       }
-
+      if (cmd == "2")
+      {
+        createPinsIntents();
+      }
       if (cmd == "6")
       {
 
@@ -129,16 +135,15 @@ void loop()
         Serial.print(store->size());
         Serial.println(" намериний");
       }
-      
-      
+
       cmd = ""; // очистить буфер
     }
     else
     {
       cmd += c; // собираем строку
     }
+    Serial.println(" я завис");
   }
-  unsigned long now = millis();
 
   wifi.setup(inet.get_ssid(), inet.get_password()); // ??????????????????????????????77
   wifi.maintain();                                  //???????????????????????????????????
@@ -147,12 +152,18 @@ void loop()
     device_binder->begin();
     arbitrator->begin();
     intent_executor->begin();
+   
     for (size_t i{}; i < pinsG.size(); ++i)
     {
       pinsG[i]->begin();
     }
   }
   store->update();
-  //updatePinsIntentTask();
-  vTaskDelay(5);
+  // updatePinsIntentTask();
+  vTaskDelay(100);
+  if (millis() - last_print > 10000)
+  {
+    Serial.println("Поток main работает");
+    last_print = millis();
+  }
 }

@@ -12,7 +12,6 @@ public:
   enum
   {
     accepted, start , finish,
-
     idESP, idUSER, idSer, 
 
     intent, ping_pong,

@@ -108,7 +108,7 @@ ExecuteResult IExecutor::execute(const ScheduledIntent &intent, uint8_t priority
   DeviceResult answer;
   switch (intent.intent.type)
   {
-  
+
   case ActionType::ENABLE_TOGGLE:
     promote_lock(active, pending);
     active_power_lock = Lock{};
@@ -190,8 +190,12 @@ Lock IExecutor::get_pending_lock(ActionType type) const
 bool IExecutor::check_lock(const Lock &lock) const
 {
   auto time = myclock.getEpochMillis();
+  
+
   if (lock.policy == LockPolicyType::INFINITE || lock.endTime >= time)
+  {
     return true;
+  }
   return false;
 }
 
