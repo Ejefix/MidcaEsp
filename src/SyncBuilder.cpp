@@ -44,7 +44,7 @@ void SyncBuilder::buildDeviceSnapshot(String &out) const
     out = Skeleton::commands[Skeleton::snapshot_device] + out;
 }
 
-void SyncBuilder::buildIntentSnapshot(String &out) const
+void SyncBuilder::buildSTORESnapshot(String &out) const
 {
     out.clear();
     JsonDocument mainDoc{};
@@ -80,42 +80,56 @@ void SyncBuilder::buildConnectSnapshot(String &out) const
     out = Skeleton::commands[Skeleton::snapshot_connect] + out;
 }
 
-void SyncBuilder::buildPINsSnapshot(PinId id, String &out) const
+void SyncBuilder::buildPINsSnapshot(std::vector<PinId> ids, String &out) const
 {
     out.clear();
-    for (size_t i{}; i < pinsG.size(); ++i)
+    JsonDocument mainDoc{};
+    mainDoc["ID"] = Skeleton::id;
+    mainDoc["time"] = millis();
+    JsonObject data = mainDoc["data"].to<JsonObject>();
+    JsonArray pinsJson = data["PINS"].to<JsonArray>();
+
+    for (size_t z{}; z < ids.size(); ++z)
     {
-        if (pinsG[i]->get_id() == id)
+        for (size_t i{}; i < pinsG.size(); ++i)
         {
-            JsonDocument mainDoc{};
-            mainDoc["ID"] = Skeleton::id;
-            mainDoc["time"] = millis();
-            JsonObject data = mainDoc["data"].to<JsonObject>();
-            JsonArray pinsJson = data["PINS"].to<JsonArray>();
-            pinsG[i]->fill_json(pinsJson);
-            serializeJson(mainDoc, out); // строка для передачи
-            size_t size = strlen(out.c_str());
-            // Serial.print("[INF] Размер данных JSON PIN: ");
-            //  Serial.print(size);
-            // Serial.println(" байт");
-            out = Skeleton::commands[Skeleton::snapshot_pins] + out;
-            return;
+            if (pinsG[i]->get_id() == ids[z])
+            {
+                pinsG[i]->fill_json(pinsJson);
+                // size_t size = strlen(out.c_str());
+                //  Serial.print("[INF] Размер данных JSON PIN: ");
+                //   Serial.print(size);
+                //  Serial.println(" байт");
+            }
         }
     }
+    serializeJson(mainDoc, out);
+    out = Skeleton::commands[Skeleton::snapshot_pins] + out;
 }
 
-void SyncBuilder::buildIntentSnapshot(ScheduledIntentID id, String &out) const
+void SyncBuilder::buildIntentSnapshot(std::vector<ScheduledIntentID> id, String &out) const
 {
     out.clear();
-    auto intent = store->get(id);
-    if (!intent)
-        return;
+
+    std::vector<ScheduledIntent> intents{};
+    for (size_t i{}; i < id.size(); ++i)
+    {
+        auto intent = store->get(id[i]);
+        if (!intent)
+            continue;
+        intents.push_back(*intent);
+    }
+
     JsonDocument mainDoc{};
     mainDoc["ID"] = Skeleton::id;
     mainDoc["time"] = millis();
     JsonObject data = mainDoc["data"].to<JsonObject>();
     JsonArray intentJson = data["INTENT"].to<JsonArray>();
-    intent->fill_json(intentJson);
+    for (auto it = intents.begin(); it != intents.end(); ++it)
+    {
+        it->fill_json(intentJson);
+    }
+
     serializeJson(mainDoc, out); // строка для передачи
     size_t size = strlen(out.c_str());
     // Serial.print("[INF] Размер данных JSON: ");
@@ -159,8 +173,8 @@ bool ClientTCP::begin()
 {
     if (millis() - time_reset > 1000 * 60)
     {
-       time_reset = millis(); 
-       session.reset();
+        time_reset = millis();
+        session.reset();
     }
 
     if (isAuth)
@@ -219,30 +233,64 @@ ClientStreamSession::ClientStreamSession(WiFiClient &client_) : client(client_)
 
 void ClientStreamSession::begin()
 {
-
+    static uint8_t currentQueue = 0;
     sendUpdatePins();
     sendUpdateDevice();
     sendUpdateStore();
     sendUpdateConnect();
-    if (!buffer.empty() && millis() - time_send > 10)
+
+    bool sent = false; // флаг успешной отправки
+
+    for (uint8_t i = 0; i < 3 && !sent; ++i)
     {
-        to_send(client, buffer.front());
-        buffer.pop_front();
-        time_send = millis();
+        switch (currentQueue)
+        {
+        case 0:
+            if (!buffer.empty())
+            {
+                to_send(client, buffer.front());
+                buffer.pop_front();
+                time_send = millis();
+                sent = true;
+            }
+            break;
+
+        case 1:
+            if (!bufferIntent.empty())
+            {
+                to_send(client, bufferIntent.front());
+                bufferIntent.pop_front();
+                time_send = millis();
+                sent = true;
+            }
+            break;
+
+        case 2:
+            if (!bufferPINS.empty())
+            {
+                to_send(client, bufferPINS.front());
+                bufferPINS.pop_front();
+                time_send = millis();
+                sent = true;
+            }
+            break;
+        }
+
+        // переходим к следующей очереди
+        currentQueue = (currentQueue + 1) % 3;
     }
-    static size_t last_size = 0;
+
     static uint32_t last_print = 0;
 
-    if (millis() - last_print > 1000)
+    if (millis() - last_print > 10000)
     {
-        int diff = buffer.size() - last_size;
 
-        Serial.printf("buffer = %d diff = %d heap = %d\n",
+        Serial.printf("buffer = %d bufferIntent = %d bufferPINS = %d  heap = %d\n",
                       buffer.size(),
-                      diff,
+                      bufferIntent.size(),
+                      bufferPINS.size(),
                       ESP.getFreeHeap());
 
-        last_size = buffer.size();
         last_print = millis();
     }
 }
@@ -259,6 +307,8 @@ void ClientStreamSession::reset()
     versionPINS.clear();
     versionDevice.clear();
     buffer.clear();
+    bufferIntent.clear();
+    bufferPINS.clear();
     versionStore = 0;
     versionDevice_registry = 0;
     versionDevice_bind = 0;
@@ -267,20 +317,47 @@ uint32_t counter = 0;
 size_t last_mb = -1;
 void ClientStreamSession::to_send(WiFiClient &client_, const String &body)
 {
+    static size_t lastPackets[5]{};    // размеры последних 5 пакетов
+    static uint8_t index = 0;          // текущая позиция
+    static uint32_t counterPacket = 0; // счетчик пакетов
 
-    counter += body.length();
+    size_t packetSize = body.length(); // размер текущего пакета
+
+    lastPackets[index] = packetSize; // сохраняем размер
+    index = (index + 1) % 5;         // переход к следующей позиции
+
+    ++counterPacket; // увеличиваем количество отправленных пакетов
+
+    if (counterPacket % 5 == 0) // каждые 5 пакетов выводим статистику
+    {
+        Serial.print("[PACKETS] ");
+
+        for (uint8_t i = 0; i < 5; ++i)
+        {
+            uint8_t pos = (index + i) % 5; // правильный порядок от старого к новому
+
+            Serial.print(lastPackets[pos]); // размер пакета
+            Serial.print(" ");
+        }
+
+        Serial.println("bytes");
+    }
+
+    counter += packetSize; // общий счетчик байт
+
     if ((counter >> 20) != last_mb)
     {
         last_mb = (counter >> 20);
 
         double mb = counter / 1024.0 / 1024.0;
+
         Serial.print("[LOG] Отправлено всего -> ");
         Serial.print(mb, 3);
         Serial.println(" MB");
     }
 
-    client_.write((const uint8_t *)body.c_str(), body.length()); // отправка байт
-    client_.flush();
+    client_.write((const uint8_t *)body.c_str(), packetSize); // отправка пакета
+    client_.flush();                                          // сброс буфера
 }
 String ClientStreamSession::fullBody(const String &body, const String &id_)
 {
@@ -346,20 +423,41 @@ void ClientStreamSession::sendFullStatus()
 */
 void ClientStreamSession::sendUpdatePins()
 {
+    
+    if (millis() - last_PINS < 50)
+    {
+        return;
+    }
+    last_PINS = millis();
+    std::vector<PinId> ids{};
     for (size_t i{}; i < pinsG.size(); ++i)
     {
         auto version = pinsG[i]->get_version();
         auto id = pinsG[i]->get_id();
         if (versionPINS.find(id) == versionPINS.end() || versionPINS[id] != version)
         {
+
+            ids.push_back(id);
             versionPINS[id] = version;
-            String out;
-            out.reserve(200); // резервируем память для строки
-            builder.buildPINsSnapshot(id, out);
-            if (!out.isEmpty())
+            if (ids.size() >= 10)
             {
-                buffer.push_back(fullBody(enc.encrypt(out)));
+                String out;
+                builder.buildPINsSnapshot(ids, out);
+                if (!out.isEmpty())
+                {
+                    bufferPINS.push_back(fullBody(enc.encrypt(out)));
+                    ids.clear();
+                }
             }
+        }
+    }
+    if (!ids.empty())
+    {
+        String out;
+        builder.buildPINsSnapshot(ids, out);
+        if (!out.isEmpty())
+        {
+            bufferPINS.push_back(fullBody(enc.encrypt(out)));
         }
     }
 }
@@ -369,7 +467,7 @@ void ClientStreamSession::sendUpdateDevice()
 
     if (versionDevice_registry != device_registry->get_version())
     {
-        versionDevice_registry = device_registry->get_version();
+
         auto list_idDevice = device_registry->get_ids();
         for (size_t i{}; i < list_idDevice.size(); ++i)
         {
@@ -386,56 +484,54 @@ void ClientStreamSession::sendUpdateDevice()
                 }
             }
         }
+        versionDevice_registry = device_registry->get_version();
     }
 }
 
 void ClientStreamSession::sendUpdateStore()
 {
+
     if (versionStore != store->get_version())
     {
 
         auto list_id = store->get_list_id();
-        // Serial.print("[ClientStreamSession] Версия магазина ");
-        //  Serial.println(versionStore);
-        for (auto it = versionIntent.begin(); it != versionIntent.end();)
-        {
-            auto exists = std::any_of(list_id.begin(), list_id.end(),
-                                      [&](const ScheduledIntentID &id)
-                                      {
-                                          return id == it->first;
-                                      });
 
-            if (!exists)
-            {
-                it = versionIntent.erase(it);
-            }
-            else
-            {
-                ++it;
-            }
-        }
+        //  чистим наш писок версий и удаляем те что уже нету
+        controlversionIntent(list_id);
+        std::vector<ScheduledIntentID> ids{};
         for (const auto &id : list_id)
         {
             auto version = store->get_version(id);
             if (versionIntent.find(id) == versionIntent.end() || versionIntent[id] != version)
             {
+                ids.push_back(id);
+                versionIntent[id] = version;
+            }
+            if (ids.size() > 8)
+            {
                 String out;
-                out.reserve(200); // резервируем память для строки
-                builder.buildIntentSnapshot(id, out);
+                out.reserve(600); // резервируем память для строки
+                builder.buildIntentSnapshot(ids, out);
+                ids.clear();
                 if (!out.isEmpty())
                 {
-                    buffer.push_back(fullBody(enc.encrypt(out)));
+                    bufferIntent.push_back(fullBody(enc.encrypt(out)));
                 }
-                versionIntent[id] = version;
-                //  Serial.print("[ClientStreamSession] Интент id  ");
-                //  Serial.print(id);
-                //  Serial.print(" версии ");
-                //  Serial.print(version);
-                //  Serial.println(" отправлен.");
             }
         }
-        versionStore = store->get_version();
+        if (!ids.empty())
+        {
+            String out;
+            out.reserve(600); // резервируем память для строки
+            builder.buildIntentSnapshot(ids, out);
+            ids.clear();
+            if (!out.isEmpty())
+            {
+                bufferIntent.push_back(fullBody(enc.encrypt(out)));
+            }
+        }
     }
+    versionStore = store->get_version();
 }
 
 void ClientStreamSession::sendUpdateConnect()
@@ -449,6 +545,27 @@ void ClientStreamSession::sendUpdateConnect()
         if (!out.isEmpty())
         {
             buffer.push_back(fullBody(enc.encrypt(out)));
+        }
+    }
+}
+
+void ClientStreamSession::controlversionIntent(const std::vector<ScheduledIntentID> &actual)
+{
+    for (auto it = versionIntent.begin(); it != versionIntent.end();)
+    {
+        auto exists = std::any_of(actual.begin(), actual.end(),
+                                  [&](const ScheduledIntentID &id)
+                                  {
+                                      return id == it->first;
+                                  });
+
+        if (!exists)
+        {
+            it = versionIntent.erase(it);
+        }
+        else
+        {
+            ++it;
         }
     }
 }

@@ -155,8 +155,8 @@ inline const char *toString(TargetType v);
 // настройки плавного увеличения яркости
 struct FadePayload
 {
-    uint8_t from{};        // стартовая яркость
-    uint8_t to{};          // конечная яркость
+    int from{};        // стартовая яркость
+    int to{};          // конечная яркость
     uint32_t durationMs{}; // время перехода
     void fill_json(JsonObject &obj) const;
     bool fill_from_json(const JsonObject &obj);
@@ -295,7 +295,7 @@ public:
     std::unordered_set<ScheduledIntentID> get_running() const;
     // получает приоритет события, на основе кто создал и уровня важности события
     uint8_t resolvePriority(const IntentSource &source, const IntentUrgency &urgency) const;
-    uint32_t get_version(ScheduledIntentID id) const;
+    uint32_t get_version(ScheduledIntentID id) ;
     uint32_t get_version() const;
 
     std::vector<ScheduledIntentID> get_list_id();
@@ -316,6 +316,9 @@ protected:
 
     // обновить статус намериния
     bool setState(ScheduledIntentID id, IntentState state, ExecuteMeta rezult);
+
+    // обновить статус намериния
+    bool setMeta(ScheduledIntentID id, ExecuteMeta rezult);
 
     // переключает на следущие сутки
     bool moveToNextDay(const ScheduledIntentID &id);

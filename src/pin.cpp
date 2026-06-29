@@ -15,7 +15,7 @@ PIN::PIN(IPinDriver *pin_driver_) : pin_driver(pin_driver_), id{id_pin}
   }
   else
   {
-   
+
     step = (brightness_to - brightness_from) / static_cast<double>(timeFADE);
   }
 }
@@ -24,6 +24,7 @@ void PIN::load()
 }
 void PIN::save() const
 {
+
   String path = "/pin" + String(id);
   JsonDocument doc{};
   JsonArray arr = doc["pin"].to<JsonArray>();
@@ -46,6 +47,7 @@ uint32_t PIN::get_version() const
 
 DeviceResult PIN::executeAction(const ScheduledIntent &intent)
 {
+  std::lock_guard<std::mutex> lock(mutex_pin);
 
   if (!pin_driver)
     return DeviceResult::DRIVER_NOT_FOUND;
@@ -68,6 +70,13 @@ DeviceResult PIN::executeAction(const ScheduledIntent &intent)
     timeFADE = fade->durationMs;
     brightness_to = fade->to;
     brightness_from = fade->from;
+
+    Serial.printf(
+        "[PIN::FADE] from =  %u to = %u durationMs = %lu\n",
+        fade->from,
+        fade->to,
+        (unsigned long)fade->durationMs);
+
     if (brightness_from > brightness_to)
     {
       std::swap(brightness_from, brightness_to);
@@ -80,6 +89,7 @@ DeviceResult PIN::executeAction(const ScheduledIntent &intent)
     {
       step = (brightness_to - brightness_from) / static_cast<double>(timeFADE);
     }
+    ++version;
     return DeviceResult::SUCCESS;
   }
   case ActionType::CONNECT:
@@ -127,14 +137,15 @@ void PIN::begin()
 
   if (!pin_driver)
     return;
+  std::lock_guard<std::mutex> lock(mutex_pin);
   if (!activPIN)
   {
     brightness = brightness_from;
-    timeStep  =  millis();
+    timeStep = millis();
   }
   else
   {
-    
+
     if (timeFADE == 0)
     {
       brightness = brightness_to;
@@ -142,7 +153,7 @@ void PIN::begin()
     else
     {
       auto now = millis();
-      
+
       auto elapsed = now - timeStep;
       timeStep = now;
 
@@ -186,4 +197,5 @@ void PIN::fill_json(JsonArray &arr) const
   obj["brightness"] = brightness;
   obj["to"] = brightness_to;
   obj["from"] = brightness_from;
+  obj["timeFADE"] = timeFADE;
 }

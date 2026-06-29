@@ -12,6 +12,12 @@ void IntentExecutor::begin()
 
 void IntentExecutor::executor(const ScheduledIntentID &id) const
 {
+    if (id > 15)
+    {
+        Serial.print("[IntentExecutor::executor] Намериние ScheduledIntentID ");
+        Serial.print(id);
+        Serial.println(" поступило исполняется");
+    }
     auto snap = store->get(id);
 
     if (!snap)
@@ -58,6 +64,13 @@ void IntentExecutor::executor(const ScheduledIntentID &id) const
 
 void IntentExecutor::executorPIN(const ScheduledIntent &intent) const
 {
+    if (intent.id > 15)
+    {
+        Serial.print("[IntentExecutor::executorPIN] Намериние ScheduledIntentID ");
+        Serial.print(intent.id);
+        Serial.println(" поступило");
+    }
+
     auto targetID = TargetRef::getId(intent.intent.targetID); // ID кто должен сделать
     for (size_t i{}; i < pinsG.size(); ++i)
     {
@@ -100,15 +113,39 @@ void IntentExecutor::executorRezult(IExecutor *dev, const ScheduledIntent &inten
     switch (intent.life)
     {
     case LifetimeType::ONCE_TRY:
+        if (intent.id > 15)
+        {
+            Serial.print("[IntentExecutor::executorRezult] Намериние ScheduledIntentID ");
+            Serial.print(intent.id);
+            Serial.println(" ONCE_TRY");
+        }
         rezult = dev->execute(intent, store->resolvePriority(intent.source, intent.urgency), LockPolicyType::INFINITE, intent.schedule.endTime);
         break;
     case LifetimeType::ONESHOT:
+        if (intent.id > 15)
+        {
+            Serial.print("[IntentExecutor::executorRezult] Намериние ScheduledIntentID ");
+            Serial.print(intent.id);
+            Serial.println(" ONESHOT");
+        }
         rezult = dev->execute(intent, store->resolvePriority(intent.source, intent.urgency), LockPolicyType::TTL, intent.schedule.endTime);
         break;
     case LifetimeType::REPEAT:
+        if (intent.id > 15)
+        {
+            Serial.print("[IntentExecutor::executorRezult] Намериние ScheduledIntentID ");
+            Serial.print(intent.id);
+            Serial.println(" REPEAT");
+        }
         rezult = dev->execute(intent, store->resolvePriority(intent.source, intent.urgency), LockPolicyType::TTL, intent.schedule.endTime);
         break;
     case LifetimeType::UNENDING:
+        if (intent.id > 15)
+        {
+            Serial.print("[IntentExecutor::executorRezult] Намериние ScheduledIntentID ");
+            Serial.print(intent.id);
+            Serial.println(" UNENDING");
+        }
         rezult = dev->execute(intent, store->resolvePriority(intent.source, intent.urgency), LockPolicyType::INFINITE, intent.schedule.endTime);
         break;
     default:
