@@ -35,7 +35,8 @@ void Internet::processServerResponse()
 {
   while (true)
   {
-    vTaskDelay(5);
+    auto now = millis();
+    vTaskDelay(2);
     serwer.begin();
     WiFiClient clientDevice = tcpServer->available();
     if (clientDevice && clients.size() < 15)
@@ -59,11 +60,19 @@ void Internet::processServerResponse()
       }
     }
     communication_udp();
+    static uint32_t max_time = 0;
     static uint32_t last_print = 0;
+
     if (millis() - last_print > 10000)
     {
-      Serial.println("Поток TCP работает");
+      auto current_time = millis() - now;
+      if (current_time > max_time)
+      {
+        max_time = current_time;
+      }
       last_print = millis();
+      Serial.print("[INFO time] Поток TCP работает max_time = ");
+      Serial.println(max_time);
     }
   }
 }

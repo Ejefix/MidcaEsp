@@ -3,6 +3,7 @@
 
 Authorization::Authorization(WiFiClient &client, CLOCK &myclock) : client(client), myclock{myclock}
 {
+    client.setTimeout(500); 
 }
 
 bool Authorization::authorize()
@@ -75,7 +76,7 @@ void Authorization::set_adr(String adr)
 
 void Authorization::set_port(uint16_t port)
 {
-    this->port - port;
+    this->port = port;
 }
 
 String Authorization::bodyAuthorization()

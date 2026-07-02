@@ -64,6 +64,7 @@ private:
     uint8_t counter{};
     uint8_t currentQueue{};
     uint32_t last_PINS{};
+    uint32_t last_Intent{};
 };
 
 // приём

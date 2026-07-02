@@ -71,11 +71,11 @@ DeviceResult PIN::executeAction(const ScheduledIntent &intent)
     brightness_to = fade->to;
     brightness_from = fade->from;
 
-    Serial.printf(
-        "[PIN::FADE] from =  %u to = %u durationMs = %lu\n",
-        fade->from,
-        fade->to,
-        (unsigned long)fade->durationMs);
+   // Serial.printf(
+    //    "[PIN::FADE] from =  %u to = %u durationMs = %lu\n",
+    //    fade->from,
+    //    fade->to,
+    //    (unsigned long)fade->durationMs);
 
     if (brightness_from > brightness_to)
     {

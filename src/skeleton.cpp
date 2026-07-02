@@ -41,11 +41,12 @@ ExecuteResult IExecutor::execute(const ScheduledIntent &intent, uint8_t priority
     {
       if (priority > active->priority)
       {
-        rezult = ExecuteResult::SUCCESS_OVERRIDE_EQUAL_PRIORITY;
+
+        rezult = ExecuteResult::SUCCESS_OVERRIDE_LOWER_PRIORITY;
       }
       else if (priority == active->priority)
       {
-        rezult = ExecuteResult::SUCCESS_OVERRIDE_LOWER_PRIORITY;
+        rezult = ExecuteResult::SUCCESS_OVERRIDE_EQUAL_PRIORITY;
       }
       else
       {
@@ -67,11 +68,11 @@ ExecuteResult IExecutor::execute(const ScheduledIntent &intent, uint8_t priority
     {
       if (priority > active->priority)
       {
-        rezult = ExecuteResult::SUCCESS_OVERRIDE_EQUAL_PRIORITY;
+         rezult = ExecuteResult::SUCCESS_OVERRIDE_LOWER_PRIORITY;
       }
       else if (priority == active->priority)
       {
-        rezult = ExecuteResult::SUCCESS_OVERRIDE_LOWER_PRIORITY;
+        rezult = ExecuteResult::SUCCESS_OVERRIDE_EQUAL_PRIORITY;
       }
       else
       {
@@ -190,7 +191,6 @@ Lock IExecutor::get_pending_lock(ActionType type) const
 bool IExecutor::check_lock(const Lock &lock) const
 {
   auto time = myclock.getEpochMillis();
-  
 
   if (lock.policy == LockPolicyType::INFINITE || lock.endTime >= time)
   {
