@@ -81,35 +81,61 @@ void updatePinsIntentTask()
 }
 String cmd{};
 size_t last_size = 0;
-uint32_t last_print = 0;
-
 void printRAM()
 {
-  Serial.println("=== RAM REPORT ===");
+  Serial.println("\n================= RAM DUMP =================");
 
-  Serial.print("Free heap: ");
-  Serial.println(ESP.getFreeHeap());
+  // БАЗОВЫЕ МЕТРИКИ HEAP
+  size_t freeHeap = ESP.getFreeHeap();
+  size_t minFreeHeap = ESP.getMinFreeHeap();
+  size_t heapSize = ESP.getHeapSize();
 
-  Serial.print("Min free heap: ");
-  Serial.println(ESP.getMinFreeHeap());
+  // ФРАГМЕНТАЦИЯ
+  size_t largestBlock = heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
+  size_t freeInternal = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
+  size_t largestInternal = heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL);
 
-  Serial.print("Heap size: ");
-  Serial.println(ESP.getHeapSize());
+  // PSRAM (если есть)
+  size_t freePSRAM = heap_caps_get_free_size(MALLOC_CAP_SPIRAM);
+  size_t largestPSRAM = heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM);
 
-  Serial.print("Largest block: ");
-  Serial.println(heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
+  // СТАТИСТИКА ФРАГМЕНТАЦИИ (твоя кастомная)
+  static size_t minLargestBlock = SIZE_MAX;
+  if (largestBlock < minLargestBlock)
+    minLargestBlock = largestBlock;
 
-  Serial.print("Free internal RAM: ");
-  Serial.println(heap_caps_get_free_size(MALLOC_CAP_INTERNAL));
+  // ================= OUTPUT =================
 
-  Serial.print("Largest internal block: ");
-  Serial.println(heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL));
+  Serial.printf("Free heap:              %u\n", freeHeap);
+  Serial.printf("Min free heap:          %u\n", minFreeHeap);
+  Serial.printf("Heap size:              %u\n", heapSize);
 
-  Serial.println("=================");
+  Serial.printf("Largest block:          %u\n", largestBlock);
+  Serial.printf("Min largest block:      %u\n", minLargestBlock);
+
+  Serial.printf("Free internal RAM:      %u\n", freeInternal);
+  Serial.printf("Largest internal block: %u\n", largestInternal);
+
+  Serial.printf("Free PSRAM:             %u\n", freePSRAM);
+  Serial.printf("Largest PSRAM block:    %u\n", largestPSRAM);
+
+  // ДИАГНОСТИКА СОСТОЯНИЯ
+  Serial.println("\n--- HEALTH ---");
+
+  if (minLargestBlock < 5000)
+    Serial.println("WARNING: high fragmentation!");
+
+  if (minFreeHeap < 50000)
+    Serial.println("WARNING: low heap history!");
+
+  if (largestBlock < 10000)
+    Serial.println("WARNING: allocation risk!");
+
+  Serial.println("===========================================\n");
 }
 void loop()
 {
-
+  auto now = millis();
   while (Serial.available())
   {                         // есть данные
     char c = Serial.read(); // читаем символ
@@ -121,7 +147,7 @@ void loop()
 
       if (cmd == "1")
       {
-        store->printI();
+        store->clear();
       }
       if (cmd == "2")
       {
@@ -152,7 +178,7 @@ void loop()
     device_binder->begin();
     arbitrator->begin();
     intent_executor->begin();
-   
+
     for (size_t i{}; i < pinsG.size(); ++i)
     {
       pinsG[i]->begin();
@@ -160,10 +186,23 @@ void loop()
   }
   store->update();
   // updatePinsIntentTask();
-  vTaskDelay(100);
+  vTaskDelay(5);
+  static uint32_t max_time = 0;
+  static uint32_t last_print = 0;
+
   if (millis() - last_print > 10000)
   {
-    Serial.println("Поток main работает");
+    auto current_time = millis() - now;
+    if (current_time > max_time)
+    {
+      max_time = current_time;
+    }
     last_print = millis();
+    Serial.print("[INFO time] Поток MAIN работает max_time = ");
+    Serial.println(max_time);
+    Serial.print("[INFO] размер магазина ");
+    Serial.print(store->size());
+    Serial.println(" намериний");
+    printRAM();
   }
 }

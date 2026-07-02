@@ -292,7 +292,7 @@ public:
     bool isFinalState(IntentState state) const;
     // продлевает время жизни
     bool extend(const ScheduledIntentID &id, timeMS time);
-    std::unordered_set<ScheduledIntentID> get_running() const;
+    std::unordered_set<ScheduledIntentID> get_running();
     // получает приоритет события, на основе кто создал и уровня важности события
     uint8_t resolvePriority(const IntentSource &source, const IntentUrgency &urgency) const;
     uint32_t get_version(ScheduledIntentID id) ;
@@ -309,16 +309,16 @@ public:
     size_t size() const;
 
     void printI();
-
+    void clear();
 protected:
     // Методы управления состоянием Intent.
     // Предназначены только для использования Arbitrator.
 
     // обновить статус намериния
-    bool setState(ScheduledIntentID id, IntentState state, ExecuteMeta rezult);
+    bool setState(ScheduledIntentID id, IntentState state);
 
     // обновить статус намериния
-    bool setMeta(ScheduledIntentID id, ExecuteMeta rezult);
+    bool setMetaArbitrator(ScheduledIntentID id, IntentFailArbitrator rezult, ScheduledIntentID blockingIntentIDArbitrator = 0);
 
     // переключает на следущие сутки
     bool moveToNextDay(const ScheduledIntentID &id);

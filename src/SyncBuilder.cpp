@@ -171,7 +171,7 @@ ClientTCP::~ClientTCP()
 
 bool ClientTCP::begin()
 {
-    if (millis() - time_reset > 1000 * 60)
+    if (millis() - time_reset > 1000 * 30)
     {
         time_reset = millis();
         session.reset();
@@ -187,6 +187,7 @@ bool ClientTCP::begin()
                 session.reset();
             }
             session.begin();
+
             return true;
         }
     }
@@ -233,6 +234,11 @@ ClientStreamSession::ClientStreamSession(WiFiClient &client_) : client(client_)
 
 void ClientStreamSession::begin()
 {
+
+    static uint32_t max_time = 0;
+    static uint32_t last_print = 0;
+
+    auto now = millis();
     static uint8_t currentQueue = 0;
     sendUpdatePins();
     sendUpdateDevice();
@@ -279,19 +285,18 @@ void ClientStreamSession::begin()
         // переходим к следующей очереди
         currentQueue = (currentQueue + 1) % 3;
     }
-
-    static uint32_t last_print = 0;
-
     if (millis() - last_print > 10000)
     {
-
-        Serial.printf("buffer = %d bufferIntent = %d bufferPINS = %d  heap = %d\n",
-                      buffer.size(),
-                      bufferIntent.size(),
-                      bufferPINS.size(),
-                      ESP.getFreeHeap());
-
+        auto current_time = millis() - now;
+        if (current_time > max_time)
+        {
+            max_time = current_time;
+        }
         last_print = millis();
+        Serial.print("[INFO time] Время выполнения  ClientStreamSession = ");
+        Serial.print(current_time);
+        Serial.print("  max_time = ");
+        Serial.println(max_time);
     }
 }
 
@@ -326,23 +331,23 @@ void ClientStreamSession::to_send(WiFiClient &client_, const String &body)
     lastPackets[index] = packetSize; // сохраняем размер
     index = (index + 1) % 5;         // переход к следующей позиции
 
-    ++counterPacket; // увеличиваем количество отправленных пакетов
-
-    if (counterPacket % 5 == 0) // каждые 5 пакетов выводим статистику
-    {
-        Serial.print("[PACKETS] ");
-
-        for (uint8_t i = 0; i < 5; ++i)
-        {
-            uint8_t pos = (index + i) % 5; // правильный порядок от старого к новому
-
-            Serial.print(lastPackets[pos]); // размер пакета
-            Serial.print(" ");
-        }
-
-        Serial.println("bytes");
-    }
-
+    ++counterPacket;       // увеличиваем количество отправленных пакетов
+                           /*
+                               if (counterPacket % 5 == 0) // каждые 5 пакетов выводим статистику
+                               {
+                                   Serial.print("[PACKETS] ");
+                       
+                                   for (uint8_t i = 0; i < 5; ++i)
+                                   {
+                                       uint8_t pos = (index + i) % 5; // правильный порядок от старого к новому
+                       
+                                       Serial.print(lastPackets[pos]); // размер пакета
+                                       Serial.print(" ");
+                                   }
+                       
+                                   Serial.println("bytes");
+                               }
+                           */
     counter += packetSize; // общий счетчик байт
 
     if ((counter >> 20) != last_mb)
@@ -423,8 +428,8 @@ void ClientStreamSession::sendFullStatus()
 */
 void ClientStreamSession::sendUpdatePins()
 {
-    
-    if (millis() - last_PINS < 50)
+
+    if (millis() - last_PINS < 100)
     {
         return;
     }
@@ -491,9 +496,13 @@ void ClientStreamSession::sendUpdateDevice()
 void ClientStreamSession::sendUpdateStore()
 {
 
+    if (millis() - last_Intent < 100)
+    {
+        return;
+    }
+    last_Intent = millis();
     if (versionStore != store->get_version())
     {
-
         auto list_id = store->get_list_id();
 
         //  чистим наш писок версий и удаляем те что уже нету
@@ -507,7 +516,7 @@ void ClientStreamSession::sendUpdateStore()
                 ids.push_back(id);
                 versionIntent[id] = version;
             }
-            if (ids.size() > 8)
+            if (ids.size() > 10)
             {
                 String out;
                 out.reserve(600); // резервируем память для строки
@@ -620,7 +629,7 @@ void ClientStreamReceiver::parseIntent(const String &jsonStr)
         }
         else
         {
-            Serial.println("[ClientStreamReceiver::parseIntent] Интент успешно распарсен из JSON, добавляем в магазин");
+            // Serial.println("[ClientStreamReceiver::parseIntent] Интент успешно распарсен из JSON, добавляем в магазин");
             store->add(intent);
         }
     }
@@ -631,12 +640,30 @@ ClientStreamReceiver::ClientStreamReceiver(WiFiClient &client_) : client(client_
 
 int ClientStreamReceiver::begin()
 {
+    static uint32_t last_print = 0;
+    static uint32_t max_time = 0;
+    auto now = millis();
+
+    int answer{-1};
     if (client.available())
     {
 
-        return communication_socet();
+        answer = communication_socet();
     }
-    return -1;
+    if (millis() - last_print > 10000)
+    {
+        auto current_time = millis() - now;
+        if (current_time > max_time)
+        {
+            max_time = current_time;
+        }
+        last_print = millis();
+        Serial.print("[INFO time] Время выполнения  ClientStreamReceiver = ");
+        Serial.print(current_time);
+        Serial.print("  max_time = ");
+        Serial.println(max_time);
+    }
+    return answer;
 }
 
 int ClientStreamReceiver::communication_socet()
@@ -667,7 +694,7 @@ int ClientStreamReceiver::communication_socet()
 
     if (isCommandProcessed(cmdId))
     {
-        // Serial.println("[communication_socet] уже обрабатывали эту команду, пропускаем -> " + cmdId);
+        //Serial.println("[communication_socet] уже обрабатывали эту команду, пропускаем -> " + cmdId);
         return 0;
     }
     else
@@ -697,11 +724,11 @@ int ClientStreamReceiver::communication_socet()
     switch (com)
     {
     case Skeleton::intent:
-        Serial.println("[LOG] Команда INTENT");
+        // Serial.println("[LOG] Команда INTENT");
         parseIntent(packet);
         return Skeleton::intent;
     case Skeleton::ping_pong:
-        Serial.println("[LOG] Команда PING_PONG");
+        //  Serial.println("[LOG] Команда PING_PONG");
         return Skeleton::ping_pong;
     default:
         Serial.println("[LOG] Команда " + command);

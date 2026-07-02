@@ -5,7 +5,7 @@ const uint64_t one_day = 24ULL * 60ULL * 60ULL * 1000ULL;
 
 ScheduledIntentStore::ScheduledIntentStore()
 {
-    store.reserve(100);
+    store.reserve(350);
     running.reserve(50);
     scheduler.reserve(50);
 }
@@ -17,6 +17,11 @@ ScheduledIntentID ScheduledIntentStore::add(ScheduledIntent &intent)
     {
         return {};
     }
+    if (store.size() >= 300)
+    {
+
+        return {};
+    }
 
     intent.id = nextId;
     ++nextId;
@@ -26,15 +31,11 @@ ScheduledIntentID ScheduledIntentStore::add(ScheduledIntent &intent)
     }
     ++intent.version;
     ++version;
-    mutex_store.lock();
-
+    std::scoped_lock lock(mutex_store, mutex_scheduler);
     store[intent.id] = intent;
     // Serial.print("[ScheduledIntentStore::add] Намериние ScheduledIntentID ");
     // Serial.print(intent.id);
     // Serial.println(" добавлено в магазин");
-    mutex_store.unlock();
-
-    std::lock_guard<std::mutex> lock(mutex_scheduler);
     auto &vec = scheduler[intent.intent.targetID];
     if (vec.capacity() - vec.size() < 10)
         vec.reserve(vec.capacity() + 20);
@@ -43,19 +44,20 @@ ScheduledIntentID ScheduledIntentStore::add(ScheduledIntent &intent)
     std::sort(vec.begin(), vec.end(),
               [this](const ScheduledIntentID &a, const ScheduledIntentID &b)
               {
-                  auto first = get(a);
-                  auto second = get(b);
-                  if (!first || !second)
+                  auto firstIt = store.find(a);
+                  auto secondIt = store.find(b);
+                  if (firstIt == store.end() || secondIt == store.end())
                   {
                       Serial.println("[ERR]❌❌❌ Ошибка сортировки! Не смогли получить интент. ❌❌❌");
                       return false;
                   }
-
+                  const auto &first = firstIt->second;
+                  const auto &second = secondIt->second;
                   auto priorityFirst =
-                      resolvePriority(first->source, first->urgency);
+                      resolvePriority(first.source, first.urgency);
 
                   auto prioritySecond =
-                      resolvePriority(second->source, second->urgency);
+                      resolvePriority(second.source, second.urgency);
 
                   // сначала priority
                   if (priorityFirst != prioritySecond)
@@ -65,7 +67,7 @@ ScheduledIntentID ScheduledIntentStore::add(ScheduledIntent &intent)
 
                   // если priority одинаковый
                   // более новый intent выигрывает
-                  return first->createdAt > second->createdAt;
+                  return first.createdAt > second.createdAt;
               });
 
     // Serial.println("[ScheduledIntentStore::add] Отсортировано ");
@@ -75,23 +77,23 @@ ScheduledIntentID ScheduledIntentStore::add(ScheduledIntent &intent)
 void ScheduledIntentStore::update()
 {
     bool changed = false;
-    std::lock_guard<std::mutex> lock(mutex_store);
+    std::lock_guard<std::mutex> lock_store(mutex_store);
     for (auto it = store.begin(); it != store.end();)
     {
         auto &intent = it->second;
         auto now = myclock.getEpochMillis();
-        if (intent.state != IntentState::TO_DELETE && isFinalState(intent.state) && now - intent.updatedAt > 20000)
+        if (intent.state != IntentState::TO_DELETE && isFinalState(intent.state) && now - intent.updatedAt > 10000)
         {
             intent.state = IntentState::TO_DELETE;
             intent.updatedAt = now;
             intent.version++;
             changed = true;
         }
-        if (intent.state == IntentState::TO_DELETE && now - intent.updatedAt > 10000)
+        if (intent.state == IntentState::TO_DELETE && now - intent.updatedAt > 5000)
         {
-           // Serial.print("[ScheduledIntentStore::update] Намериние ScheduledIntentID ");
-           // Serial.print(intent.id);
-          //  Serial.println(" удалено");
+            // Serial.print("[ScheduledIntentStore::update] Намериние ScheduledIntentID ");
+            // Serial.print(intent.id);
+            //  Serial.println(" удалено");
             it = store.erase(it);
             changed = true;
             continue;
@@ -104,9 +106,9 @@ void ScheduledIntentStore::update()
     }
 }
 
-bool ScheduledIntentStore::setState(ScheduledIntentID id, IntentState state, ExecuteMeta rezult)
+bool ScheduledIntentStore::setState(ScheduledIntentID id, IntentState state)
 {
-    std::lock_guard<std::mutex> lock(mutex_store);
+    std::scoped_lock lock(mutex_store, mutex_scheduler);
     auto it = store.find(id);
 
     if (it != store.end())
@@ -120,13 +122,12 @@ bool ScheduledIntentStore::setState(ScheduledIntentID id, IntentState state, Exe
             */
             return false;
         }
-        if (it->second.state == state && it->second.rezult == rezult)
+        if (it->second.state == state)
         {
             return true;
         }
         it->second.updatedAt = myclock.getEpochMillis();
         it->second.state = state;
-        it->second.rezult = rezult;
         it->second.version++;
         ++version;
         switch (state)
@@ -145,7 +146,6 @@ bool ScheduledIntentStore::setState(ScheduledIntentID id, IntentState state, Exe
         case IntentState::TO_DELETE:
         default:
         {
-            std::lock_guard<std::mutex> lock(mutex_scheduler);
             auto it_scheduler = scheduler.find(it->second.intent.targetID);
             if (it_scheduler != scheduler.end())
             {
@@ -167,9 +167,9 @@ bool ScheduledIntentStore::setState(ScheduledIntentID id, IntentState state, Exe
     return false;
 }
 
-bool ScheduledIntentStore::setMeta(ScheduledIntentID id, ExecuteMeta rezult)
+bool ScheduledIntentStore::setMetaArbitrator(ScheduledIntentID id, IntentFailArbitrator rezult, ScheduledIntentID blockingIntentIDArbitrator)
 {
-    std::lock_guard<std::mutex> lock(mutex_store);
+    std::lock_guard<std::mutex> lock_store(mutex_store);
     auto it = store.find(id);
 
     if (it != store.end())
@@ -183,9 +183,13 @@ bool ScheduledIntentStore::setMeta(ScheduledIntentID id, ExecuteMeta rezult)
             */
             return false;
         }
-
+        if (it->second.rezult.reason == rezult && it->second.rezult.blockingIntentIDArbitrator == blockingIntentIDArbitrator)
+        {
+            return true;
+        }
         it->second.updatedAt = myclock.getEpochMillis();
-        it->second.rezult = rezult;
+        it->second.rezult.reason = rezult;
+        it->second.rezult.blockingIntentIDArbitrator = blockingIntentIDArbitrator;
         it->second.version++;
         ++version;
         return true;
@@ -196,6 +200,7 @@ bool ScheduledIntentStore::setMeta(ScheduledIntentID id, ExecuteMeta rezult)
 
 bool ScheduledIntentStore::extend(const ScheduledIntentID &id, timeMS time)
 {
+    std::lock_guard<std::mutex> lock_store(mutex_store);
     auto it = store.find(id);
     if (time <= myclock.getEpochMillis())
         return false;
@@ -222,7 +227,7 @@ bool ScheduledIntentStore::extend(const ScheduledIntentID &id, timeMS time)
 
 bool ScheduledIntentStore::moveToNextDay(const ScheduledIntentID &id)
 {
-    std::lock_guard<std::mutex> lock(mutex_store);
+    std::lock_guard<std::mutex> lock_store(mutex_store);
     auto it = store.find(id);
 
     if (it != store.end())
@@ -252,7 +257,7 @@ bool ScheduledIntentStore::moveToNextDay(const ScheduledIntentID &id)
 
 std::optional<ScheduledIntent> ScheduledIntentStore::get(ScheduledIntentID id)
 {
-    std::lock_guard<std::mutex> lock(mutex_store);
+    std::lock_guard<std::mutex> lock_store(mutex_store);
     auto it = store.find(id);
 
     if (it == store.end())
@@ -263,12 +268,13 @@ std::optional<ScheduledIntent> ScheduledIntentStore::get(ScheduledIntentID id)
 
 const std::unordered_map<TargetRefID, std::vector<ScheduledIntentID>> ScheduledIntentStore::all()
 {
-    std::lock_guard<std::mutex> lock(mutex_scheduler);
+    std::lock_guard<std::mutex> lock_scheduler(mutex_scheduler);
     return scheduler;
 }
 
-std::unordered_set<ScheduledIntentID> ScheduledIntentStore::get_running() const
+std::unordered_set<ScheduledIntentID> ScheduledIntentStore::get_running()
 {
+    std::lock_guard<std::mutex> lock_store(mutex_store);
     return running;
 }
 
@@ -421,6 +427,26 @@ void ScheduledIntentStore::printI()
     for (auto it = store.begin(); it != store.end(); ++it)
     {
         it->second.printF();
+    }
+}
+
+void ScheduledIntentStore::clear()
+{
+    {
+        std::scoped_lock lock(mutex_store, mutex_scheduler);
+        store.clear();
+        scheduler.clear();
+        running.clear();
+    }
+    for (size_t i{}; i < pinsG.size(); ++i)
+    {
+        ScheduledIntent intent{};
+        intent.intent.targetID = TargetRef::make(TargetType::PIN, pinsG[i]->get_id());
+        intent.intent.type = ActionType::OFF;
+        intent.source = IntentSource::IntentDEFAULT;
+        intent.life = LifetimeType::UNENDING;
+        intent.createdAt = myclock.getEpochMillis();
+        add(intent);
     }
 }
 
