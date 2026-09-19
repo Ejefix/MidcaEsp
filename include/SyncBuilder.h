@@ -56,15 +56,18 @@ private:
     uint32_t versionDevice_bind{};
     WiFiClient &client;
     SyncBuilder builder{};
-    std::deque<String> bufferPINS{};
-    std::deque<String> bufferIntent{};
+    
+    
     Encryption enc{};
     std::deque<String> buffer;
-    uint32_t time_send{};
+   
     uint8_t counter{};
-    uint8_t currentQueue{};
+   
     uint32_t last_PINS{};
-    uint32_t last_Intent{};
+    uint32_t last_Device{};
+    uint32_t last_Store{};
+    uint32_t last_Connect{};
+    int counter_buffer{};
 };
 
 // приём
@@ -114,4 +117,5 @@ private:
     ClientStreamSession session;
     ClientStreamReceiver receiver;
     uint32_t time_reset{};
+    uint32_t time_full_update{};
 };

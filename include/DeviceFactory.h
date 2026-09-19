@@ -69,6 +69,8 @@ public:
     void save() const;
     void load();
 private:
-    std::unordered_map<DeviceId, std::vector<PinId>> data;
+    std::unordered_map<uint16_t, std::vector<PinId>> data;
+    std::unordered_map<PinId, ScheduledIntentID> dataIntent;
+
     uint32_t version{1};
 };

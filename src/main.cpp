@@ -203,6 +203,6 @@ void loop()
     Serial.print("[INFO] размер магазина ");
     Serial.print(store->size());
     Serial.println(" намериний");
-    printRAM();
+    // printRAM();
   }
 }

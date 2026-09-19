@@ -162,6 +162,7 @@ ClientTCP::ClientTCP(WiFiClient &&client, CLOCK &myclock, bool isAuth)
     : isAuth{isAuth}, client{std::move(client)}, auth{this->client, myclock}, session{this->client}, receiver{this->client}
 {
     client.setNoDelay(true);
+    time_full_update = millis();
 }
 
 ClientTCP::~ClientTCP()
@@ -171,9 +172,13 @@ ClientTCP::~ClientTCP()
 
 bool ClientTCP::begin()
 {
-    if (millis() - time_reset > 1000 * 30)
+    auto start = millis();
+    if (start - time_reset > 1000 * 60 * 3)
     {
-        time_reset = millis();
+        time_reset = time_full_update = start;
+    }
+    if (start - time_full_update < 1000 * 5)
+    {
         session.reset();
     }
 
@@ -237,54 +242,29 @@ void ClientStreamSession::begin()
 
     static uint32_t max_time = 0;
     static uint32_t last_print = 0;
-
     auto now = millis();
-    static uint8_t currentQueue = 0;
-    sendUpdatePins();
-    sendUpdateDevice();
-    sendUpdateStore();
-    sendUpdateConnect();
-
-    bool sent = false; // флаг успешной отправки
-
-    for (uint8_t i = 0; i < 3 && !sent; ++i)
+    if (buffer.empty())
     {
-        switch (currentQueue)
-        {
-        case 0:
-            if (!buffer.empty())
-            {
-                to_send(client, buffer.front());
-                buffer.pop_front();
-                time_send = millis();
-                sent = true;
-            }
-            break;
+        if (counter_buffer == 0)
+            sendUpdatePins();
+        if (counter_buffer == 1)
+            sendUpdateDevice();
+        if (counter_buffer == 2)
+            sendUpdateStore();
+        if (counter_buffer == 3)
+            sendUpdateConnect();
 
-        case 1:
-            if (!bufferIntent.empty())
-            {
-                to_send(client, bufferIntent.front());
-                bufferIntent.pop_front();
-                time_send = millis();
-                sent = true;
-            }
-            break;
-
-        case 2:
-            if (!bufferPINS.empty())
-            {
-                to_send(client, bufferPINS.front());
-                bufferPINS.pop_front();
-                time_send = millis();
-                sent = true;
-            }
-            break;
-        }
-
-        // переходим к следующей очереди
-        currentQueue = (currentQueue + 1) % 3;
+        ++counter_buffer;
+        if (counter_buffer > 3)
+            counter_buffer = 0;
     }
+
+    if (!buffer.empty())
+    {
+        to_send(client, buffer.front());
+        buffer.pop_front();
+    }
+
     if (millis() - last_print > 10000)
     {
         auto current_time = millis() - now;
@@ -311,9 +291,9 @@ void ClientStreamSession::reset()
     versionIntent.clear();
     versionPINS.clear();
     versionDevice.clear();
-    buffer.clear();
-    bufferIntent.clear();
-    bufferPINS.clear();
+    // buffer.clear();
+    // bufferIntent.clear();
+    //  bufferPINS.clear();
     versionStore = 0;
     versionDevice_registry = 0;
     versionDevice_bind = 0;
@@ -450,7 +430,7 @@ void ClientStreamSession::sendUpdatePins()
                 builder.buildPINsSnapshot(ids, out);
                 if (!out.isEmpty())
                 {
-                    bufferPINS.push_back(fullBody(enc.encrypt(out)));
+                    buffer.push_back(fullBody(enc.encrypt(out)));
                     ids.clear();
                 }
             }
@@ -462,7 +442,7 @@ void ClientStreamSession::sendUpdatePins()
         builder.buildPINsSnapshot(ids, out);
         if (!out.isEmpty())
         {
-            bufferPINS.push_back(fullBody(enc.encrypt(out)));
+            buffer.push_back(fullBody(enc.encrypt(out)));
         }
     }
 }
@@ -470,6 +450,11 @@ void ClientStreamSession::sendUpdatePins()
 void ClientStreamSession::sendUpdateDevice()
 {
 
+    if (millis() - last_Device < 100)
+    {
+        return;
+    }
+    last_Device = millis();
     if (versionDevice_registry != device_registry->get_version())
     {
 
@@ -496,11 +481,11 @@ void ClientStreamSession::sendUpdateDevice()
 void ClientStreamSession::sendUpdateStore()
 {
 
-    if (millis() - last_Intent < 100)
+    if (millis() - last_Store < 100)
     {
         return;
     }
-    last_Intent = millis();
+    last_Store = millis();
     if (versionStore != store->get_version())
     {
         auto list_id = store->get_list_id();
@@ -524,7 +509,7 @@ void ClientStreamSession::sendUpdateStore()
                 ids.clear();
                 if (!out.isEmpty())
                 {
-                    bufferIntent.push_back(fullBody(enc.encrypt(out)));
+                    buffer.push_back(fullBody(enc.encrypt(out)));
                 }
             }
         }
@@ -536,7 +521,7 @@ void ClientStreamSession::sendUpdateStore()
             ids.clear();
             if (!out.isEmpty())
             {
-                bufferIntent.push_back(fullBody(enc.encrypt(out)));
+                buffer.push_back(fullBody(enc.encrypt(out)));
             }
         }
     }
@@ -545,6 +530,11 @@ void ClientStreamSession::sendUpdateStore()
 
 void ClientStreamSession::sendUpdateConnect()
 {
+    if (millis() - last_Connect < 100)
+    {
+        return;
+    }
+    last_Connect = millis();
     if (versionDevice_bind != device_binder->get_version())
     {
         versionDevice_bind = device_binder->get_version();
@@ -629,7 +619,7 @@ void ClientStreamReceiver::parseIntent(const String &jsonStr)
         }
         else
         {
-            // Serial.println("[ClientStreamReceiver::parseIntent] Интент успешно распарсен из JSON, добавляем в магазин");
+            Serial.println("[ClientStreamReceiver::parseIntent] Интент успешно распарсен из JSON, добавляем в магазин");
             store->add(intent);
         }
     }
@@ -694,7 +684,7 @@ int ClientStreamReceiver::communication_socet()
 
     if (isCommandProcessed(cmdId))
     {
-        //Serial.println("[communication_socet] уже обрабатывали эту команду, пропускаем -> " + cmdId);
+        // Serial.println("[communication_socet] уже обрабатывали эту команду, пропускаем -> " + cmdId);
         return 0;
     }
     else

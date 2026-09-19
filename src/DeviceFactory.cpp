@@ -251,17 +251,27 @@ DeviceRegistry::DeviceEntry::DeviceEntry(IInputDevice *dev, DeviceType t, uint8_
 DeviceBinder::DeviceBinder()
 {
     data.reserve(20);
-    load();
 }
 
 bool DeviceBinder::connect(DeviceId device, PinId obj)
 {
+    const auto dev = TargetRef::getId(device);
+    const auto type = TargetRef::getType(device);
 
-    if (TargetRef::getType(device) != TargetType::DEVICE && !device_registry->get(TargetRef::getId(device)))
+    if (type != TargetType::DEVICE) // Проверяем тип цели.
     {
-        return false;
+        Serial.print("[DeviceBinder] connect не создан: неверный TargetType, ожидался DEVICE, получен: "); // Выводим причину.
+        Serial.println(static_cast<int>(type));                                                            // Выводим фактический тип.
+        return false;                                                                                      // Прерываем подключение.
     }
-    auto it = data.find(device);
+
+    if (!device_registry->get(dev)) // Проверяем наличие устройства в реестре.
+    {
+        Serial.print("[DeviceBinder] connect не создан: устройство не найдено, DeviceId: "); // Выводим причину.
+        Serial.println(dev);                                                                 // Выводим ID устройства.
+        return false;                                                                        // Прерываем подключение.
+    }
+    auto it = data.find(dev);
 
     if (it != data.end())
     {
@@ -271,9 +281,9 @@ bool DeviceBinder::connect(DeviceId device, PinId obj)
                 return true;
         }
     }
-    data[device].push_back({obj}); // добавляем connection в список устройства
+    data[dev].push_back({obj}); // добавляем connection в список устройства
     Serial.print("[DeviceBinder] connect создан : DeviceId ");
-    Serial.print(device);
+    Serial.print(dev);
     Serial.print(", добали PinId ");
     Serial.println(obj);
     ++version;
@@ -283,12 +293,12 @@ bool DeviceBinder::connect(DeviceId device, PinId obj)
 
 void DeviceBinder::disconnect(DeviceId device, PinId obj)
 {
-
-    auto it = data.find(device);
+    auto dev = TargetRef::getId(device);
+    auto it = data.find(dev);
     if (it == data.end())
     {
         Serial.print("[DeviceBinder] connect не найден : DeviceId ");
-        Serial.print(device);
+        Serial.print(dev);
         Serial.print(" PinId ");
         Serial.println(obj);
 
@@ -316,9 +326,10 @@ void DeviceBinder::disconnect(DeviceId device, PinId obj)
 
 void DeviceBinder::disconnect(DeviceId device)
 {
+    auto dev = TargetRef::getId(device);
     Serial.print("[DeviceBinder] все connect удалёны: девайсу id ");
     Serial.println(device);
-    data.erase(device);
+    data.erase(dev);
     ++version;
     save();
 }
@@ -359,7 +370,7 @@ void DeviceBinder::disconnect(PinId obj)
 
 void DeviceBinder::disconnect()
 {
-    Serial.print("[DeviceBinder] Полная очистка всех соединений...");
+    Serial.println("[DeviceBinder] Полная очистка всех соединений...");
     data.clear();
     ++version;
     save();
@@ -367,11 +378,12 @@ void DeviceBinder::disconnect()
 
 void DeviceBinder::fill_json(JsonArray &arr) const
 {
+
     for (const auto &d : data)
     {
         JsonObject obj = arr.add<JsonObject>();
         obj["deviceId"] = d.first;
-        JsonArray pins = obj["pins"].to<JsonArray>();
+        JsonArray pins = obj["IDpins"].to<JsonArray>();
         for (const auto &p : d.second)
         {
             pins.add(p);
@@ -381,12 +393,18 @@ void DeviceBinder::fill_json(JsonArray &arr) const
 
 void DeviceBinder::begin()
 {
+    static uint32_t max_time = 0;
+    if (millis() - max_time < 50)
+    {
+        return;
+    }
+    max_time = millis();
     ScheduledIntent intent{};
 
     // делаем снимок железа
     for (auto it = data.begin(); it != data.end(); ++it)
     {
-        DeviceId deviceID = it->first;
+        auto deviceID = it->first;
         auto dev = device_registry->get(deviceID);
         if (!dev)
             continue;
@@ -424,13 +442,19 @@ void DeviceBinder::begin()
             switch (dev->event())
             {
             case InputEvent::HighLevel:
-                intent.intent.type = ActionType::ON;
-                store->add(intent);
-                break;
             case InputEvent::RisingEdge:
                 intent.intent.type = ActionType::ON;
-                Serial.println("[DeviceBinder] Создал намериние ON");
-                store->add(intent);
+                if (auto it = dataIntent.find(*it_vec); it != dataIntent.end())
+                {
+                    if (!store->extend(it->second, intent.schedule.endTime))
+                    {
+                        dataIntent[*it_vec] = store->add(intent);
+                    }
+                }
+                else
+                {
+                    dataIntent[*it_vec] = store->add(intent);
+                }
                 break;
 
             case InputEvent::Toggle:
@@ -468,28 +492,66 @@ void DeviceBinder::save() const
 
 void DeviceBinder::load()
 {
+    // Serial.println("=== LOAD binder.json ===");
+
     File file = SPIFFS.open("/binder.json", "r"); // открываем файл
 
-    if (!file) // если нет файла
-        return;
-
-    JsonDocument doc;                                      // JSON документ
-    DeserializationError err = deserializeJson(doc, file); // читаем JSON
-
-    if (err) // если ошибка парсинга
-        return;
-
-    JsonArray arr = doc.as<JsonArray>(); // получаем массив
-    data.clear();                       // очищаем текущие данные
-    for (JsonObject obj : arr)           // перебор записей
+    if (!file)
     {
-        DeviceId deviceId = obj["deviceId"];
-        JsonArray pins = obj["pins"].as<JsonArray>();
+        Serial.println("Файл binder.json не найден");
+        return;
+    }
+
+    JsonDocument doc;
+
+    DeserializationError err = deserializeJson(doc, file);
+
+    if (err)
+    {
+        Serial.print("Ошибка JSON: ");
+        Serial.println(err.c_str());
+        file.close();
+        return;
+    }
+
+    file.close();
+
+    // Serial.println("JSON из файла:");
+
+    serializeJsonPretty(doc, Serial);
+    // Serial.println();
+
+    JsonArray arr = doc.as<JsonArray>();
+
+    data.clear();
+
+    for (JsonObject obj : arr)
+    {
+        uint16_t deviceId = obj["deviceId"];
+
+        // Serial.print("Device ID: ");
+        //  Serial.println(deviceId);
+
+        JsonArray pins = obj["IDpins"].as<JsonArray>();
+
         std::vector<PinId> vecPIN;
+
+        // Serial.print("Pins: ");
+
         for (JsonVariant pin : pins)
         {
-            vecPIN.push_back(pin.as<PinId>());
+            PinId id = pin.as<PinId>();
+
+            vecPIN.push_back(id);
+
+            // Serial.print(id);
+            //  Serial.print(' ');
         }
+
+        //  Serial.println();
+
         data[deviceId] = vecPIN;
     }
+
+    // Serial.println("=== LOAD COMPLETE ===");
 }
