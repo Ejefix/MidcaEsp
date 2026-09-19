@@ -14,6 +14,24 @@ Internet::Internet(CLOCK &myclock)
     : tcpServer(new WiFiServer{TCP_PORT}), serwer{std::move(WiFiClient{}), myclock, true}
 {
 }
+void Internet::start()
+{
+  wifi.setup(inet.get_ssid(), inet.get_password());
+  if (wifi.begin())
+  {
+    delay(1000);
+    Serial.println("[LOG] синхронизация времени");
+    if (myclock.begin())
+    {
+      inet.connect();
+    }
+    else
+    {
+      delay(1000);
+    }
+  }
+  startTCPSerwer();
+}
 // это нужно для первого подлючения к серверу и авторизации
 bool Internet::connect()
 {
@@ -33,8 +51,16 @@ void Internet::startTCPSerwer()
 
 void Internet::processServerResponse()
 {
+
+  start();
   while (true)
   {
+    if (!wifi.maintain())
+    {
+      vTaskDelay(1000);
+      continue;
+    }
+    myclock.loop();
     auto now = millis();
     vTaskDelay(2);
     serwer.begin();
@@ -60,6 +86,7 @@ void Internet::processServerResponse()
       }
     }
     communication_udp();
+    /*
     static uint32_t max_time = 0;
     static uint32_t last_print = 0;
 
@@ -74,6 +101,7 @@ void Internet::processServerResponse()
       Serial.print("[INFO time] Поток TCP работает max_time = ");
       Serial.println(max_time);
     }
+      */
   }
 }
 

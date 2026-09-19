@@ -11,7 +11,7 @@ public:
    
     CLOCK() = default;
     bool begin(); // запуск синхронизации
-    void loop();  // проверка и обновление времени (вызывать в loop)
+    bool loop();  // проверка и обновление времени (вызывать в loop)
     timeMS getEpochMillis();
     unsigned long long getEpoch_hash();
     operator bool() const;
@@ -24,7 +24,6 @@ public:
 private:
     void addMilliseconds(unsigned long long ms);
     bool syncTime(); // принудительная синхронизация с NTP
-    bool sync{false};
     timeMS lastSyncMillis{}; // когда последний раз синхронизировались
     timeMS lastMillis{};
     timeMS syncInterval{};

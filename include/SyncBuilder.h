@@ -83,11 +83,14 @@ public:
 private:
     int communication_socet();
     String read_buffer();
+    bool searhID();
     bool isCommandProcessed(const String &id);
     void parseIntent(const String &jsonStr);
     WiFiClient &client;
     Encryption enc{};
     static std::deque<String> history;
+    const unsigned long timeout {100}; //  таймаут
+    const int bodyMaxSize{4500};
 };
 
 /* Главный контроллер TCP */

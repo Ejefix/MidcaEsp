@@ -2,7 +2,6 @@
 #define GLOBALS_H
 #include "pindriver.h"
 #include "pin.h"
-#include "myWIFI.h"
 #include "internet.h"
 #include <Adafruit_MCP23X17.h> 
 #include "gpio_pin.h"
@@ -15,8 +14,7 @@
 #define FW_BUILD FW_RELAY
 
 
-// Настройки Wi-Fi
-extern MyWiFi wifi;
+
 extern Config configG;
 extern Internet inet;
 extern CLOCK myclock;

@@ -9,11 +9,13 @@
 #include <WebServer.h>
 #include "SyncBuilder.h"
 #include "authorization.h"
+#include "myWIFI.h"
 
 class Internet : public Encryption, public Config
 {
 public:
   explicit Internet(CLOCK &myclock);
+  void start();
   bool connect();
   void startTCPSerwer();
   void processServerResponse();
@@ -34,6 +36,7 @@ private:
   std::deque<ClientTCP *> clients;
 
   const String local_name = "MIDCAMAINU";
+  MyWiFi wifi{};
 };
 
 #endif

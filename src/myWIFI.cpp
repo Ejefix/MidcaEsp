@@ -66,7 +66,7 @@ bool MyWiFi::maintain() {
     WiFi.begin(_ssid, _password);       // пробуем снова подключиться
 
     unsigned long start = millis();
-    while (WiFi.status() != WL_CONNECTED && millis() - start < 20000) {
+    while (WiFi.status() != WL_CONNECTED && millis() - start < 10000) {
       delay(500);  // ждём подключения до 10 сек
     }
 

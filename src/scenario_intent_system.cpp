@@ -33,9 +33,9 @@ ScheduledIntentID ScheduledIntentStore::add(ScheduledIntent &intent)
     ++version;
     std::scoped_lock lock(mutex_store, mutex_scheduler);
     store[intent.id] = intent;
-     Serial.print("[ScheduledIntentStore::add] Намериние ScheduledIntentID ");
-     Serial.print(intent.id);
-     Serial.println(" добавлено в магазин");
+    Serial.print("[ScheduledIntentStore::add] Намериние ScheduledIntentID ");
+    Serial.print(intent.id);
+    Serial.println(" добавлено в магазин");
     auto &vec = scheduler[intent.intent.targetID];
     if (vec.capacity() - vec.size() < 10)
         vec.reserve(vec.capacity() + 20);
@@ -203,6 +203,8 @@ bool ScheduledIntentStore::extend(const ScheduledIntentID &id, timeMS time)
 {
     std::lock_guard<std::mutex> lock_store(mutex_store);
     auto it = store.find(id);
+    if (it == store.end())
+        return false;
     if (time <= myclock.getEpochMillis())
         return false;
     if (isFinalState(it->second.state))
@@ -214,9 +216,9 @@ bool ScheduledIntentStore::extend(const ScheduledIntentID &id, timeMS time)
     }
     if (it != store.end())
     {
-       // Serial.print("[ScheduledIntentStore] Намериние ScheduledIntentID ");
-      //  Serial.print(id);
-      //  Serial.println(" успешно обновил время дейсвия");
+        // Serial.print("[ScheduledIntentStore] Намериние ScheduledIntentID ");
+        //  Serial.print(id);
+        //  Serial.println(" успешно обновил время дейсвия");
         it->second.updatedAt = myclock.getEpochMillis();
         it->second.schedule.endTime = time;
         it->second.version++;
