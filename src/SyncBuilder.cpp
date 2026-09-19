@@ -731,7 +731,9 @@ String ClientStreamReceiver::read_buffer()
 {
     /*
     Структура пакета:
-    [start 4 байта]        Проверка с Skeleton::commands[Skeleton::start]
+    [idESP 4 байта]         Проверка с Skeleton::commands[Skeleton::idESP]
+    [idESP]                 ID ESP
+    [start 4 байта]         Проверка с Skeleton::commands[Skeleton::start]
     [1 байт: value]         Кол-во символов, в которых записан размер payload
     [sizeStr (value)]       Число, размер payload + ID
     [ID 4 байта]            Идентификатор пакета
@@ -742,20 +744,25 @@ String ClientStreamReceiver::read_buffer()
     body.reserve(8);
 
     unsigned long start = millis();
-    const unsigned long timeout = 300; // 0.3 сек таймаут
     uint32_t pktSize{};
     uint32_t counter_size{};
     int value{-50};
     bool read{false};
-
-    while (millis() - start < timeout && body.length() < 4500)
+    if (!searhID())
     {
-        while (client.available() > 0 && body.length() < 4500)
+        Serial.println("[LOG] Получен пакет с неверным ID");
+        return {};
+    }
+    while (millis() - start < timeout && body.length() < bodyMaxSize)
+    {
+
+        while (client.available() > 0 && body.length() < bodyMaxSize)
         {
             char z = client.read();
             ++counter_size;
             body.concat(z);
             start = millis();
+
             // Проверка стартовой последовательности
             if (!read && body.length() == 4 && body != Skeleton::commands[Skeleton::start])
             {
@@ -831,4 +838,42 @@ String ClientStreamReceiver::read_buffer()
     Serial.println(pktSize);
     Serial.println("[ERR] ❌ Пакет не прочитан (таймаут)");
     return {};
+}
+
+bool ClientStreamReceiver::searhID()
+{
+    String body;
+    body.reserve(Skeleton::id.length());
+    unsigned long start = millis();
+    bool id{false};
+    while (millis() - start < timeout)
+    {
+        while (client.available() > 0)
+        {
+            char z = client.read();
+            body.concat(z);
+            start = millis();
+            if (!id && body.length() == 4 && body != Skeleton::commands[Skeleton::idESP])
+            {
+                body.remove(0, 1); // сдвиг окна на 1
+                continue;
+            }
+            if (!id && body.length() == 4 && body == Skeleton::commands[Skeleton::idESP])
+            {
+                id = true;
+                body.clear();
+            }
+            if (body.length() == Skeleton::id.length())
+            {
+                if (Skeleton::id == body)
+                    return true;
+                else
+                {
+                    body.clear();
+                    id = false;
+                }
+            }
+        }
+    }
+    return false;
 }

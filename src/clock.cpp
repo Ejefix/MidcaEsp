@@ -9,11 +9,11 @@ bool CLOCK::begin()
   }
   lastMillis = millis();
   configTime(0, 0, "pool.ntp.org", "time.nist.gov", "time.google.com");
-  sync = syncTime();
-  return sync; // сразу синхронизируем
+  
+  return syncTime(); // сразу синхронизируем
 }
 
-void CLOCK::loop()
+bool CLOCK::loop()
 {
   auto nowMillis = millis();
   auto delta = nowMillis - lastMillis;
@@ -23,8 +23,9 @@ void CLOCK::loop()
   // Синхронизация NTP каждые syncInterval
   if (millis() - lastSyncMillis > syncInterval)
   {
-    sync = syncTime();
+    return syncTime();
   }
+  return true;
 }
 
 bool CLOCK::syncTime()

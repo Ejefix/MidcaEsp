@@ -2,7 +2,6 @@
 #include <Wire.h>
 #include <scenario_intent_system.h>
 
-MyWiFi wifi{};
 Config configG{};
 CLOCK myclock{};
 Internet inet{myclock};
