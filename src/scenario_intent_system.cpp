@@ -33,9 +33,9 @@ ScheduledIntentID ScheduledIntentStore::add(ScheduledIntent &intent)
     ++version;
     std::scoped_lock lock(mutex_store, mutex_scheduler);
     store[intent.id] = intent;
-    // Serial.print("[ScheduledIntentStore::add] Намериние ScheduledIntentID ");
-    // Serial.print(intent.id);
-    // Serial.println(" добавлено в магазин");
+     Serial.print("[ScheduledIntentStore::add] Намериние ScheduledIntentID ");
+     Serial.print(intent.id);
+     Serial.println(" добавлено в магазин");
     auto &vec = scheduler[intent.intent.targetID];
     if (vec.capacity() - vec.size() < 10)
         vec.reserve(vec.capacity() + 20);
@@ -119,6 +119,7 @@ bool ScheduledIntentStore::setState(ScheduledIntentID id, IntentState state)
             Serial.print("[ScheduledIntentStore::setState] Намериние ScheduledIntentID ");
             Serial.print(id);
             Serial.println(" не верный статус для обновления");
+            DREAMMACHINES1984!@#
             */
             return false;
         }
@@ -213,9 +214,9 @@ bool ScheduledIntentStore::extend(const ScheduledIntentID &id, timeMS time)
     }
     if (it != store.end())
     {
-        Serial.print("[ScheduledIntentStore] Намериние ScheduledIntentID ");
-        Serial.print(id);
-        Serial.println(" успешно обновил время дейсвия");
+       // Serial.print("[ScheduledIntentStore] Намериние ScheduledIntentID ");
+      //  Serial.print(id);
+      //  Serial.println(" успешно обновил время дейсвия");
         it->second.updatedAt = myclock.getEpochMillis();
         it->second.schedule.endTime = time;
         it->second.version++;

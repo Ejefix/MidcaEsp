@@ -24,27 +24,29 @@ const std::array<int, 15> ESP_GPIO{12, 13, 14, 19, 16, 17, 18, 21, 22, 23, 25, 2
 std::vector<std::array<IGpioPin *, 16>> gpioSignal{};
 #if FW_BUILD == FW_RELAY
 const std::array<IPinDriver *, 15> PinDriver{
-    new RelayDriver{ESP_GPIO[0]},
-    new RelayDriver{ESP_GPIO[1]},
-    new RelayDriver{ESP_GPIO[2]},
-    new RelayDriver{ESP_GPIO[3]},
-    new RelayDriver{ESP_GPIO[4]},
-    new RelayDriver{ESP_GPIO[5]},
-    new RelayDriver{ESP_GPIO[6]},
+    
+    new RelayDriver{ESP_GPIO[10]},
+    new RelayDriver{ESP_GPIO[14]},
+    new RelayDriver{ESP_GPIO[13]},
     new RelayDriver{ESP_GPIO[7]},
     new RelayDriver{ESP_GPIO[8]},
-    new RelayDriver{ESP_GPIO[9]},
-    new RelayDriver{ESP_GPIO[10]},
-    new RelayDriver{ESP_GPIO[11]},
-    new RelayDriver{ESP_GPIO[12]},
-    new RelayDriver{ESP_GPIO[13]},
-    new RelayDriver{ESP_GPIO[14]},
+    new PWMDriver{ESP_GPIO[0]},
+    new PWMDriver{ESP_GPIO[1]},
+    new PWMDriver{ESP_GPIO[4]},
+    new PWMDriver{ESP_GPIO[5]},
+    new PWMDriver{ESP_GPIO[9]},
+    new PWMDriver{ESP_GPIO[11]},
+    new PWMDriver{ESP_GPIO[12]},
+    new RelayDriver{ESP_GPIO[6]},
+    new RelayDriver{ESP_GPIO[2]},
+    new RelayDriver{ESP_GPIO[3]},
 };
 
 #elif FW_BUILD == FW_PWM
 const std::array<IPinDriver *, 15> PinDriver{
     new PWMDriver{ESP_GPIO[0]},
     new PWMDriver{ESP_GPIO[1]},
+    new PWMDriver{ESP_GPIO[2]},
     new PWMDriver{ESP_GPIO[3]},
     new PWMDriver{ESP_GPIO[4]},
     new PWMDriver{ESP_GPIO[5]},
@@ -56,8 +58,7 @@ const std::array<IPinDriver *, 15> PinDriver{
     new PWMDriver{ESP_GPIO[11]},
     new PWMDriver{ESP_GPIO[12]},
     new PWMDriver{ESP_GPIO[13]},
-    new PWMDriver{ESP_GPIO[14]},
-    new PWMDriver{ESP_GPIO[15]},
+    new PWMDriver{ESP_GPIO[14]}
 };
 #else
 #error "Unknown firmware build"
@@ -116,7 +117,7 @@ void setupStart()
     {
       for (int z{}; z < 16; ++z)
       {
-         if(device_registry->add(i, DeviceType::Sensor, z))
+         if(device_registry->add(i, DeviceType::Switch, z))
         {
           Serial.print("[DeviceRegistry] Зарегестрировал устройство ");
           Serial.print("MCP23X17 номер ");
@@ -126,12 +127,10 @@ void setupStart()
         }
       }
     }
-  }
-  for (size_t i{}; i < pinsG.size(); ++i)
-  {
-    //pinsG[i]->load();
     
   }
+  device_binder->load();
+
 }
 
 std::vector<uint8_t> scanI2C()
