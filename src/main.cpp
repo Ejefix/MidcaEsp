@@ -80,7 +80,7 @@ void printInfo(uint32_t startTime)
       max_time = current_time;
     }
     last_print = millis();
-    Serial.print("[INFO time] Поток MAIN работает max_time = ");
+    Serial.print("[INFO] Поток MAIN работает max_time = ");
     Serial.println(max_time);
     Serial.print("[INFO] размер магазина ");
     Serial.print(store->size());
@@ -91,12 +91,12 @@ void printInfo(uint32_t startTime)
 bool ram{false};
 void printRAM()
 {
-  
+
   static uint32_t last_print = 0;
   if (millis() - last_print > 10000)
   {
     last_print = millis();
-    
+
     Serial.println("\n================= RAM DUMP =================");
 
     // БАЗОВЫЕ МЕТРИКИ HEAP
@@ -176,12 +176,18 @@ void loop()
       {
         ram = false;
       }
-      if (cmd == "6")
+      if (cmd == "ID")
       {
-        Serial.print("[INFO] размер магазина ");
-        Serial.print(store->size());
-        Serial.println(" намериний");
+        Serial.print("[INFO] ID Midca: ");
+        Serial.println(Skeleton::id);
       }
+      if (cmd == "test")
+      {
+        WiFiUDP Udp;
+        UDPSender sender{Udp,1001};
+        sender.update_broadcast();
+      }
+
       cmd = ""; // очистить буфер
     }
     else

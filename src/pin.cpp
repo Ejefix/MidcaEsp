@@ -71,7 +71,7 @@ DeviceResult PIN::executeAction(const ScheduledIntent &intent)
     brightness_to = fade->to;
     brightness_from = fade->from;
 
-   // Serial.printf(
+    // Serial.printf(
     //    "[PIN::FADE] from =  %u to = %u durationMs = %lu\n",
     //    fade->from,
     //    fade->to,
@@ -198,4 +198,8 @@ void PIN::fill_json(JsonArray &arr) const
   obj["to"] = brightness_to;
   obj["from"] = brightness_from;
   obj["timeFADE"] = timeFADE;
+  auto active_power_lock = get_active_lock(ActionType::ON).source;
+  auto active_brightness_lock = get_active_lock(ActionType::FADE).source;
+  obj["powerControl"] = to_u8(active_power_lock);           // Источник, управляющий состоянием включения/выключения пина.
+  obj["brightnessControl"] = to_u8(active_brightness_lock); // Источник, управляющий яркостью пина.
 }

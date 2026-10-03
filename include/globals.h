@@ -12,7 +12,7 @@
 #define FW_PWM   2
 
 #define FW_BUILD FW_RELAY
-
+#define ENABLE_ENCRYPTION 0
 
 
 extern Config configG;

@@ -18,6 +18,7 @@ const std::array<String, Skeleton::end> Skeleton::commands{
 String Skeleton::id = String((uint64_t)ESP.getEfuseMac());
 Skeleton::Skeleton()
 {
+   
 }
 
 ExecuteResult IExecutor::execute(const ScheduledIntent &intent, uint8_t priority, LockPolicyType policy, timeMS endTime)
@@ -106,7 +107,7 @@ ExecuteResult IExecutor::execute(const ScheduledIntent &intent, uint8_t priority
   default:
     rezult = ExecuteResult::SUCCESS;
   }
-  DeviceResult answer;
+  DeviceResult answer{};
   switch (intent.intent.type)
   {
 
