@@ -30,12 +30,15 @@ private:
 
   // TCP сервер
   WiFiServer *tcpServer{nullptr};
+  
 
   WiFiUDP Udp;
-  ClientTCP serwer;
-  std::deque<ClientTCP *> clients;
+  const uint16_t portUDT{1001};
+  NetworkManager serwer;
 
-  const String local_name = "MIDCAMAINU";
+  // std::deque<ClientTCP *> clients;
+
+  const String local_name = "MIDCAMAIN";
   MyWiFi wifi{};
 };
 

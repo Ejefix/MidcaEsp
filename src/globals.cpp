@@ -129,7 +129,7 @@ void setupStart()
     
   }
   device_binder->load();
-
+  
 }
 
 std::vector<uint8_t> scanI2C()

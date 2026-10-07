@@ -53,6 +53,7 @@ bool MyWiFi::begin() {
         ESP.restart();  // безопасная перезагрузка для повторной попытки
         return false;   // на практике ESP уже перезагрузится
     }
+   
 }
 
 bool MyWiFi::maintain() {

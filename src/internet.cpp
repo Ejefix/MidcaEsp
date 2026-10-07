@@ -11,7 +11,7 @@
 #include "globals.h"
 
 Internet::Internet(CLOCK &myclock)
-    : tcpServer(new WiFiServer{TCP_PORT}), serwer{std::move(WiFiClient{}), myclock, true}
+    : tcpServer(new WiFiServer{TCP_PORT}), serwer{myclock}
 {
 }
 void Internet::start()
@@ -21,6 +21,7 @@ void Internet::start()
   {
     delay(1000);
     Serial.println("[LOG] синхронизация времени");
+    serwer.update_setup();
     if (myclock.begin())
     {
       inet.connect();
@@ -30,6 +31,7 @@ void Internet::start()
       delay(1000);
     }
   }
+
   startTCPSerwer();
 }
 // это нужно для первого подлючения к серверу и авторизации
@@ -46,7 +48,7 @@ void Internet::startTCPSerwer()
   tcpServer->setNoDelay(true); // отключаем Nagle, для мгновенной отправки
   Serial.print("TCP-сервер запущен на порту ");
   Serial.println(TCP_PORT);
-  Udp.begin(1001);
+  Udp.begin(portUDT);
 }
 
 void Internet::processServerResponse()
@@ -64,6 +66,7 @@ void Internet::processServerResponse()
     auto now = millis();
     vTaskDelay(2);
     serwer.begin();
+    /*
     WiFiClient clientDevice = tcpServer->available();
     if (clientDevice && clients.size() < 15)
     {
@@ -85,14 +88,26 @@ void Internet::processServerResponse()
         ++it;
       }
     }
+      */
     communication_udp();
-    /*
+
     static uint32_t max_time = 0;
     static uint32_t last_print = 0;
-
-    if (millis() - last_print > 10000)
+    static uint32_t time_center = 0;
+    static uint32_t counter = 0;
+    if (millis() - last_print > 20000)
     {
       auto current_time = millis() - now;
+      if (time_center == 0)
+      {
+        time_center = current_time;
+        ++counter;
+      }
+      else
+      {
+        time_center += current_time;
+        ++counter;
+      }
       if (current_time > max_time)
       {
         max_time = current_time;
@@ -100,8 +115,10 @@ void Internet::processServerResponse()
       last_print = millis();
       Serial.print("[INFO time] Поток TCP работает max_time = ");
       Serial.println(max_time);
+      Serial.print("[INFO time] Поток TCP среднее время  = ");
+      Serial.println(time_center/ counter);
+      serwer.reset();
     }
-      */
   }
 }
 
@@ -533,16 +550,23 @@ String Internet::read_buffer(WiFiClient &client_)
 #endif
 void Internet::communication_udp()
 
-{
+{                                     /**/
   int packetSize = Udp.parsePacket(); // проверяем, пришёл ли пакет
   if (packetSize)
   {
     if (packetSize > 50)
     {
-      // читаем и отбрасываем
-      char discard[packetSize];
-      Udp.read(discard, packetSize);
-      Serial.println("Принято слишком длинное сообщение — откидываем");
+      String discard;
+      discard.reserve(packetSize);
+
+      while (packetSize--)
+      {
+        discard += (char)Udp.read();
+      }
+      // serwer.set_UDT_data(discard);
+      Serial.print("Принято слишком длинное сообщение — откидываем ");
+      Serial.println(discard);
+
       return;
     }
 
@@ -556,13 +580,26 @@ void Internet::communication_udp()
     if (receivedRequest == local_name + Skeleton::id)
     {
       auto ip = wifi.get_my_ip();
+      uint64_t deviceId = ESP.getEfuseMac();
+      char buf[8];
+      buf[0] = (deviceId >> 56) & 0xFF;
+      buf[1] = (deviceId >> 48) & 0xFF;
+      buf[2] = (deviceId >> 40) & 0xFF;
+      buf[3] = (deviceId >> 32) & 0xFF;
+      buf[4] = (deviceId >> 24) & 0xFF;
+      buf[5] = (deviceId >> 16) & 0xFF;
+      buf[6] = (deviceId >> 8) & 0xFF;
+      buf[7] = deviceId & 0xFF;
+      String packet = String(buf, 8);
+      packet += ip;
       Udp.beginPacket(Udp.remoteIP(), Udp.remotePort());
 
-      Udp.write((const uint8_t *)ip.c_str(), ip.length());
+      Udp.write((const uint8_t *)packet.c_str(), packet.length());
       Udp.endPacket();
 
       Serial.print("Отправили IP: ");
       Serial.println(ip);
+      serwer.reset();
     }
   }
 }

@@ -39,6 +39,7 @@ String Encryption::get_hash(unsigned long long time, const String &id, const Str
 
 String Encryption::encrypt(const String& plaintext) const
 {
+  #if ENABLE_ENCRYPTION
   // Защита от пустых данных
   if (plaintext.isEmpty())
   {
@@ -95,11 +96,17 @@ String Encryption::encrypt(const String& plaintext) const
   delete[] output;                                    // освобождаем буфер
 
   return packet;                                      // возвращаем результат
+
+  #else
+  return plaintext;
+  #endif
+
 }
 
 
 String Encryption::decrypt(const String &packet) const {
 
+  #if ENABLE_ENCRYPTION
   const size_t iv_len = 12;
   const size_t tag_len = 16;
 
@@ -140,6 +147,9 @@ String Encryption::decrypt(const String &packet) const {
   String plaintext = String((char *)output, ct_len);
   free(output);
   return plaintext;
+  #else
+  return packet;
+  #endif
 }
 
 String Encryption::get_key() const

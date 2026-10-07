@@ -3,7 +3,7 @@
 
 Authorization::Authorization(WiFiClient &client, CLOCK &myclock) : client(client), myclock{myclock}
 {
-    client.setTimeout(500); 
+    client.setTimeout(500);
 }
 
 bool Authorization::authorize()
@@ -24,7 +24,7 @@ bool Authorization::authorize()
     }
 
     // Пока не истек таймаут ожидания ответа
-    if (millis() - authRetryTimer < authPause)
+    if (millis() - authRetryTimer < authRetryDelay)
     {
         return false;
     }
@@ -53,10 +53,18 @@ bool Authorization::authorize()
         client.print(bodyAuthorization());
         client.flush();
         requestAuthorization = true;
+        authRetryDelay = minAuthRetryDelay;
     }
     else
     {
-        Serial.println("[ERR]❌ Не удалось подключиться к серверу");
+
+        if (authRetryDelay < maxAuthRetryDelay)
+        {
+            authRetryDelay += 1000*5;
+        }
+        Serial.print("[ERR]❌ Не удалось подключиться к серверу. Новая попытка через ");
+        Serial.print(authRetryDelay / 1000);
+        Serial.println(" сек.");
     }
     return false;
 }
